@@ -38,6 +38,30 @@ impl Default for PredictionConfig {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct IikanjiConfig {
+    pub enabled: bool,
+    pub provider: String,
+    #[serde(default)]
+    pub api_key: String,
+    pub model: String,
+    pub max_tokens: u32,
+    pub temperature: f32,
+}
+
+impl Default for IikanjiConfig {
+    fn default() -> Self {
+        IikanjiConfig {
+            enabled: false,
+            provider: "openai".to_string(),
+            api_key: String::new(),
+            model: "gpt-4o-mini".to_string(),
+            max_tokens: 256,
+            temperature: 0.7,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ZenzaiConfig {
     pub enable: bool,
     pub profile: String,
@@ -50,6 +74,8 @@ pub struct AppConfig {
     pub learning: LearningConfig,
     pub prediction: PredictionConfig,
     pub zenzai: ZenzaiConfig,
+    #[serde(default)]
+    pub iikanji: IikanjiConfig,
 }
 
 impl Default for AppConfig {
@@ -63,6 +89,7 @@ impl Default for AppConfig {
                 profile: "".to_string(),
                 backend: "cpu".to_string(),
             },
+            iikanji: IikanjiConfig::default(),
         }
     }
 }
@@ -258,6 +285,13 @@ mod tests {
         assert!(!config.zenzai.enable);
         assert_eq!(config.zenzai.profile, "");
         assert_eq!(config.zenzai.backend, "cpu");
+        // いい感じ変換のデフォルト値
+        assert!(!config.iikanji.enabled);
+        assert_eq!(config.iikanji.provider, "openai");
+        assert_eq!(config.iikanji.api_key, "");
+        assert_eq!(config.iikanji.model, "gpt-4o-mini");
+        assert_eq!(config.iikanji.max_tokens, 256);
+        assert!((config.iikanji.temperature - 0.7).abs() < 0.01);
     }
 
     #[test]
@@ -304,6 +338,96 @@ mod tests {
         // Then: prediction フィールドが含まれる
         assert!(json.contains("\"prediction\""), "JSONにpredictionフィールドが含まれるべき");
         assert!(json.contains("\"enabled\":true"), "prediction.enabledがtrueであるべき");
+    }
+
+    // ==========================================
+    // IikanjiConfig テスト
+    // ==========================================
+
+    #[test]
+    fn tc_ik_01_iikanji_config_default() {
+        // Given: デフォルト設定を作成
+        // When: IikanjiConfig::default() を呼び出す
+        let config = IikanjiConfig::default();
+        
+        // Then: デフォルト値が設定されている
+        assert!(!config.enabled, "デフォルトではいい感じ変換は無効");
+        assert_eq!(config.provider, "openai");
+        assert_eq!(config.api_key, "");
+        assert_eq!(config.model, "gpt-4o-mini");
+        assert_eq!(config.max_tokens, 256);
+        assert!((config.temperature - 0.7).abs() < 0.01);
+    }
+
+    #[test]
+    fn tc_ik_02_iikanji_config_enabled() {
+        // Given: いい感じ変換を有効化した設定
+        // When: IikanjiConfig を作成して enabled を true に設定
+        let config = IikanjiConfig {
+            enabled: true,
+            provider: "openai".to_string(),
+            api_key: "sk-test-key".to_string(),
+            model: "gpt-4o".to_string(),
+            max_tokens: 512,
+            temperature: 0.5,
+        };
+        
+        // Then: 設定値が正しい
+        assert!(config.enabled);
+        assert_eq!(config.api_key, "sk-test-key");
+        assert_eq!(config.model, "gpt-4o");
+        assert_eq!(config.max_tokens, 512);
+    }
+
+    #[test]
+    fn tc_ik_03_iikanji_config_serialize_deserialize() {
+        // Given: いい感じ変換設定
+        let config = IikanjiConfig {
+            enabled: true,
+            provider: "openai".to_string(),
+            api_key: "sk-test".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            max_tokens: 256,
+            temperature: 0.7,
+        };
+        
+        // When: JSON にシリアライズしてデシリアライズ
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: IikanjiConfig = serde_json::from_str(&json).unwrap();
+        
+        // Then: 元の値と一致する
+        assert_eq!(config.enabled, deserialized.enabled);
+        assert_eq!(config.provider, deserialized.provider);
+        assert_eq!(config.api_key, deserialized.api_key);
+        assert_eq!(config.model, deserialized.model);
+        assert_eq!(config.max_tokens, deserialized.max_tokens);
+    }
+
+    #[test]
+    fn tc_ik_04_app_config_with_iikanji_serialize() {
+        // Given: AppConfig全体（いい感じ変換含む）
+        let mut config = AppConfig::default();
+        config.iikanji.enabled = true;
+        config.iikanji.api_key = "sk-test-key".to_string();
+        
+        // When: JSON にシリアライズ
+        let json = serde_json::to_string(&config).unwrap();
+        
+        // Then: iikanji フィールドが含まれる
+        assert!(json.contains("\"iikanji\""), "JSONにiikanjiフィールドが含まれるべき");
+        assert!(json.contains("\"provider\":\"openai\""), "provider がopenaiであるべき");
+    }
+
+    #[test]
+    fn tc_ik_05_iikanji_config_deserialize_with_default_api_key() {
+        // Given: api_keyが省略されたJSON
+        let json = r#"{"enabled":true,"provider":"openai","model":"gpt-4o-mini","max_tokens":256,"temperature":0.7}"#;
+        
+        // When: デシリアライズ
+        let config: IikanjiConfig = serde_json::from_str(json).unwrap();
+        
+        // Then: api_keyはデフォルト（空文字列）
+        assert_eq!(config.api_key, "");
     }
 
     // ==========================================

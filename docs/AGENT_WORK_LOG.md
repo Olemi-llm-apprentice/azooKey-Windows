@@ -434,3 +434,87 @@ client クレート: 10 passed; 0 failed
 - Given/When/Then コメント形式でテストを記述
 
 ---
+
+[2025-11-26 03:10:00]
+
+## 作業内容
+
+いい感じ変換機能の設計と実装
+
+### 実施した作業
+
+- **macOS版「いい感じ変換」仕様の調査**
+  - IPA未踏事業成果報告書などを参照
+  - 特殊キーワードによるLLM連携機能の仕様を把握
+
+- **設計仕様書の作成**
+  - `docs/specs/iikanji.md` を新規作成
+  - キーワード定義、LLM連携設計、テスト計画を記載
+
+- **Swift変換エンジンにいい感じ変換機能を追加**
+  - `IikanjiKeyword` 列挙型の定義（えいご、にほんご、えもじ、いいかえ、けいご、ためご、こうせい）
+  - OpenAI API呼び出し関数 `requestIikanji` の実装
+  - FFI関数の追加（`RequestIikanji`, `IsIikanjiKeyword`, `IsIikanjiEnabled`）
+  - 設定ファイルからの読み込み処理
+
+- **共有ライブラリにいい感じ変換設定を追加**
+  - `IikanjiConfig` 構造体を追加
+  - `AppConfig` に `iikanji` フィールドを追加
+  - 5件のユニットテストを追加（tc_ik_01〜tc_ik_05）
+
+- **設定アプリにいい感じ変換設定ページを追加**
+  - `frontend/src/pages/iikanji.tsx` を新規作成
+  - APIキー入力、モデル選択、テスト機能
+  - キーワード一覧の表示
+  - プライバシー警告の表示
+  - サイドバーにリンク追加
+
+- **ドキュメント更新**
+  - `docs/specs/README.md` - 仕様書インデックス更新
+  - `docs/specs/roadmap.md` - v0.3.0のいい感じ変換を完了としてマーク
+  - `docs/specs/features.md` - 機能実装状況を更新
+
+### 変更したファイル
+
+- `docs/specs/iikanji.md` - いい感じ変換設計仕様書（新規作成）
+- `settings.json` - いい感じ変換設定セクションを追加
+- `server-swift/Sources/azookey-server/azookey_server.swift` - いい感じ変換機能の実装
+- `crates/shared/src/lib.rs` - `IikanjiConfig` を追加、テスト追加
+- `frontend/src/pages/iikanji.tsx` - いい感じ変換設定ページ（新規作成）
+- `frontend/src/components/app-sidebar.tsx` - サイドバーにいい感じ変換リンク追加
+- `frontend/src/main.tsx` - ルート追加
+- `docs/specs/README.md` - 仕様書インデックス更新
+- `docs/specs/roadmap.md` - ロードマップ更新
+- `docs/specs/features.md` - 機能一覧更新
+
+### テスト実行コマンド
+
+```powershell
+cargo test --manifest-path crates/shared/Cargo.toml
+```
+
+### テスト結果
+
+```
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+### テスト観点表
+
+| Case ID | Perspective | Expected Result |
+|---------|-------------|-----------------|
+| TC-IK-01 | デフォルト値 | enabled: false, provider: "openai" |
+| TC-IK-02 | 有効化設定 | 各フィールドが正しく設定される |
+| TC-IK-03 | シリアライズ/デシリアライズ | 正しく変換される |
+| TC-IK-04 | AppConfig全体のJSON変換 | iikanjiフィールドが含まれる |
+| TC-IK-05 | api_key省略時のデシリアライズ | デフォルト（空文字列）になる |
+
+### 備考
+
+- いい感じ変換はOpenAI API（Chat Completions API）を使用
+- サポートするキーワード: えいご、にほんご、えもじ、いいかえ、けいご、ためご、こうせい
+- 設定アプリからAPIキーの設定・テストが可能
+- プライバシーに関する警告をUI上に表示
+- v0.3.0の「いい感じ変換」タスクが完了
+
+---

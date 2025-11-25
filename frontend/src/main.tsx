@@ -10,6 +10,7 @@ import { General } from "@/pages/general"
 import { Learning } from "@/pages/learning"
 import { Prediction } from "@/pages/prediction"
 import { Dictionary } from "@/pages/dictionary"
+import { Iikanji } from "@/pages/iikanji"
 import { Appearance } from "@/pages/appearance"
 import { Zenzai } from "@/pages/zenzai"
 import { About } from "@/pages/about"
@@ -27,6 +28,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
               <Route path="/learning" element={<Learning />} />
               <Route path="/prediction" element={<Prediction />} />
               <Route path="/dictionary" element={<Dictionary />} />
+              <Route path="/iikanji" element={<Iikanji />} />
               <Route path="/appearance" element={<Appearance />} />
               <Route path="/zenzai" element={<Zenzai />} />
               <Route path="/about" element={<About />} />

@@ -12,7 +12,71 @@ import ffi
     "learningEnabled": true,
     "predictionEnabled": true,
     "shouldResetMemory": false,
+    // いい感じ変換設定
+    "iikanjiEnabled": false,
+    "iikanjiProvider": "openai",
+    "iikanjiApiKey": "",
+    "iikanjiModel": "gpt-4o-mini",
+    "iikanjiMaxTokens": 256,
+    "iikanjiTemperature": 0.7,
 ]
+
+// いい感じ変換キーワード定義
+enum IikanjiKeyword: String, CaseIterable {
+    case eigo = "えいご"
+    case nihongo = "にほんご"
+    case emoji = "えもじ"
+    case iikae = "いいかえ"
+    case keigo = "けいご"
+    case tamego = "ためご"
+    case kousei = "こうせい"
+    
+    // カタカナバリアント
+    var katakanaVariant: String {
+        switch self {
+        case .eigo: return "エイゴ"
+        case .nihongo: return "ニホンゴ"
+        case .emoji: return "エモジ"
+        case .iikae: return "イイカエ"
+        case .keigo: return "ケイゴ"
+        case .tamego: return "タメゴ"
+        case .kousei: return "コウセイ"
+        }
+    }
+    
+    var prompt: String {
+        switch self {
+        case .eigo:
+            return "Translate the following Japanese text to natural English. Output only the translation, nothing else:"
+        case .nihongo:
+            return "以下の英語を自然な日本語に翻訳してください。翻訳のみ出力してください:"
+        case .emoji:
+            return "以下の文脈に最も適した絵文字を1-3個提案してください。絵文字のみ出力してください:"
+        case .iikae:
+            return "以下の文を別の表現で言い換えてください。言い換えのみ出力してください:"
+        case .keigo:
+            return "以下の文を丁寧な敬語に変換してください。変換結果のみ出力してください:"
+        case .tamego:
+            return "以下の文をカジュアルなため口に変換してください。変換結果のみ出力してください:"
+        case .kousei:
+            return "以下の文の文法・誤字脱字を校正してください。校正結果のみ出力してください:"
+        }
+    }
+    
+    static func detect(_ input: String) -> IikanjiKeyword? {
+        let normalized = input.trimmingCharacters(in: .whitespaces)
+        for keyword in IikanjiKeyword.allCases {
+            if normalized == keyword.rawValue || normalized == keyword.katakanaVariant {
+                return keyword
+            }
+        }
+        return nil
+    }
+}
+
+// いい感じ変換結果を保持
+@MainActor var iikanjiResult: String? = nil
+@MainActor var iikanjiError: String? = nil
 
 // 学習データの保存先ディレクトリ
 @MainActor var memoryURL: URL = {
@@ -140,11 +204,164 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
                         config["predictionEnabled"] = enabledValue
                     }
                 }
+                
+                // いい感じ変換設定の読み込み
+                if let iikanjiDict = json["iikanji"] as? [String: Any] {
+                    if let enabledValue = iikanjiDict["enabled"] as? Bool {
+                        config["iikanjiEnabled"] = enabledValue
+                    }
+                    if let providerValue = iikanjiDict["provider"] as? String {
+                        config["iikanjiProvider"] = providerValue
+                    }
+                    if let apiKeyValue = iikanjiDict["api_key"] as? String {
+                        config["iikanjiApiKey"] = apiKeyValue
+                    }
+                    if let modelValue = iikanjiDict["model"] as? String {
+                        config["iikanjiModel"] = modelValue
+                    }
+                    if let maxTokensValue = iikanjiDict["max_tokens"] as? Int {
+                        config["iikanjiMaxTokens"] = maxTokensValue
+                    }
+                    if let temperatureValue = iikanjiDict["temperature"] as? Double {
+                        config["iikanjiTemperature"] = temperatureValue
+                    }
+                }
             }
         } catch {
             print("Failed to read settings: \(error)")
         }
     }
+}
+
+// OpenAI API呼び出し（同期的に結果を取得）
+@MainActor func requestIikanji(keyword: IikanjiKeyword, context: String) -> String? {
+    let enabled = (config["iikanjiEnabled"] as? Bool) ?? false
+    guard enabled else {
+        print("Iikanji is disabled")
+        return nil
+    }
+    
+    let apiKey = (config["iikanjiApiKey"] as? String) ?? ""
+    guard !apiKey.isEmpty else {
+        print("Iikanji API key is not set")
+        iikanjiError = "APIキーが設定されていません"
+        return nil
+    }
+    
+    let model = (config["iikanjiModel"] as? String) ?? "gpt-4o-mini"
+    let maxTokens = (config["iikanjiMaxTokens"] as? Int) ?? 256
+    let temperature = (config["iikanjiTemperature"] as? Double) ?? 0.7
+    
+    guard !context.isEmpty else {
+        print("Context is empty")
+        iikanjiError = "変換対象のテキストがありません"
+        return nil
+    }
+    
+    // URLリクエストを作成
+    guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
+        return nil
+    }
+    
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.timeoutInterval = 10.0
+    
+    let body: [String: Any] = [
+        "model": model,
+        "messages": [
+            ["role": "system", "content": keyword.prompt],
+            ["role": "user", "content": context]
+        ],
+        "max_tokens": maxTokens,
+        "temperature": temperature
+    ]
+    
+    do {
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    } catch {
+        print("Failed to serialize request body: \(error)")
+        return nil
+    }
+    
+    // 同期的にリクエストを実行（セマフォを使用）
+    var result: String? = nil
+    let semaphore = DispatchSemaphore(value: 0)
+    
+    let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        defer { semaphore.signal() }
+        
+        if let error = error {
+            print("Iikanji API error: \(error)")
+            return
+        }
+        
+        guard let data = data else {
+            print("No data received")
+            return
+        }
+        
+        do {
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let choices = json["choices"] as? [[String: Any]],
+               let firstChoice = choices.first,
+               let message = firstChoice["message"] as? [String: Any],
+               let content = message["content"] as? String {
+                result = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        } catch {
+            print("Failed to parse response: \(error)")
+        }
+    }
+    
+    task.resume()
+    _ = semaphore.wait(timeout: .now() + 10.0)
+    
+    return result
+}
+
+// いい感じ変換を実行
+@_silgen_name("RequestIikanji")
+@MainActor public func request_iikanji(
+    keywordPtr: UnsafePointer<CChar>,
+    contextPtr: UnsafePointer<CChar>
+) -> UnsafeMutablePointer<CChar>? {
+    let keywordStr = String(cString: keywordPtr)
+    let contextStr = String(cString: contextPtr)
+    
+    guard let keyword = IikanjiKeyword.detect(keywordStr) else {
+        print("Unknown iikanji keyword: \(keywordStr)")
+        return nil
+    }
+    
+    if let result = requestIikanji(keyword: keyword, context: contextStr) {
+        iikanjiResult = result
+        return _strdup(result)
+    }
+    
+    return nil
+}
+
+// いい感じ変換キーワードかどうかを判定
+@_silgen_name("IsIikanjiKeyword")
+@MainActor public func is_iikanji_keyword(
+    inputPtr: UnsafePointer<CChar>
+) -> Bool {
+    let enabled = (config["iikanjiEnabled"] as? Bool) ?? false
+    guard enabled else {
+        return false
+    }
+    
+    let input = String(cString: inputPtr)
+    return IikanjiKeyword.detect(input) != nil
+}
+
+// いい感じ変換が有効かどうか
+@_silgen_name("IsIikanjiEnabled")
+@MainActor public func is_iikanji_enabled() -> Bool {
+    return (config["iikanjiEnabled"] as? Bool) ?? false
 }
 
 @_silgen_name("ResetLearning")

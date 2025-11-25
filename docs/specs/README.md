@@ -25,7 +25,7 @@
 | [user-dictionary.md](./user-dictionary.md) | ユーザー辞書機能 | ✅ 実装済み |
 | [v0.2.0-improvements.md](./v0.2.0-improvements.md) | v0.2.0改善項目（DPI対応、ログ改善、インストーラ改善） | ✅ 実装済み |
 | [prediction.md](./prediction.md) | 予測変換 | ✅ 実装済み |
-| magic-conversion.md | いい感じ変換 | 📝 予定 |
+| [iikanji.md](./iikanji.md) | いい感じ変換 | ✅ 実装済み |
 | theme.md | テーマ機能 | 📝 予定 |
 
 状態: ✅ 実装済み / 🚧 設計中 / 📝 予定

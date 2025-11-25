@@ -1,4 +1,4 @@
-import { Bot, Settings, Megaphone, BookOpen, Book, Lightbulb } from "lucide-react"
+import { Bot, Settings, Megaphone, BookOpen, Book, Lightbulb, Sparkles } from "lucide-react"
 
 import {
     Sidebar,
@@ -33,6 +33,11 @@ const contents = [
         title: "辞書",
         url: "/dictionary",
         icon: Book,
+    },
+    {
+        title: "いい感じ変換",
+        url: "/iikanji",
+        icon: Sparkles,
     },
     // {
     //     title: "外観",
