@@ -27,6 +27,17 @@ impl Default for LearningConfig {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct PredictionConfig {
+    pub enabled: bool,
+}
+
+impl Default for PredictionConfig {
+    fn default() -> Self {
+        PredictionConfig { enabled: true }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ZenzaiConfig {
     pub enable: bool,
     pub profile: String,
@@ -37,6 +48,7 @@ pub struct ZenzaiConfig {
 pub struct AppConfig {
     pub version: String,
     pub learning: LearningConfig,
+    pub prediction: PredictionConfig,
     pub zenzai: ZenzaiConfig,
 }
 
@@ -45,6 +57,7 @@ impl Default for AppConfig {
         AppConfig {
             version: "0.0.2".to_string(),
             learning: LearningConfig::default(),
+            prediction: PredictionConfig::default(),
             zenzai: ZenzaiConfig {
                 enable: false,
                 profile: "".to_string(),
@@ -241,9 +254,20 @@ mod tests {
         // Then: 各フィールドがデフォルト値である
         assert_eq!(config.version, "0.0.2");
         assert!(config.learning.enabled);
+        assert!(config.prediction.enabled);
         assert!(!config.zenzai.enable);
         assert_eq!(config.zenzai.profile, "");
         assert_eq!(config.zenzai.backend, "cpu");
+    }
+
+    #[test]
+    fn tc_l_03_prediction_config_default() {
+        // Given: デフォルト設定を作成
+        // When: PredictionConfig::default() を呼び出す
+        let config = PredictionConfig::default();
+        
+        // Then: enabled は true である
+        assert!(config.enabled, "デフォルトでは予測変換が有効であるべき");
     }
 
     // ==========================================

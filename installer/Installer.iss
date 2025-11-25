@@ -62,7 +62,65 @@ Filename: "schtasks"; \
   Parameters: "/Delete /TN ""Azookey Startup"" /F"; \
   Flags: runhidden runascurrentuser
 
+[UninstallDelete]
+; アプリケーションディレクトリ内の一時ファイル
+Type: files; Name: "{app}\*.log"
+Type: files; Name: "{app}\*.tmp"
+
 [Code]
+var
+  CleanUserDataCheckBox: TNewCheckBox;
+
+// アンインストール時のユーザーデータ削除確認ページを作成
+procedure InitializeUninstallProgressForm();
+var
+  InfoLabel: TNewStaticText;
+begin
+  CleanUserDataCheckBox := TNewCheckBox.Create(UninstallProgressForm);
+  CleanUserDataCheckBox.Parent := UninstallProgressForm;
+  CleanUserDataCheckBox.Caption := 'ユーザーデータを削除する（学習履歴・辞書・ログ）';
+  CleanUserDataCheckBox.Checked := False;
+  CleanUserDataCheckBox.Left := ScaleX(20);
+  CleanUserDataCheckBox.Top := UninstallProgressForm.ProgressBar.Top + UninstallProgressForm.ProgressBar.Height + ScaleY(20);
+  CleanUserDataCheckBox.Width := ScaleX(400);
+  CleanUserDataCheckBox.Height := ScaleY(20);
+
+  InfoLabel := TNewStaticText.Create(UninstallProgressForm);
+  InfoLabel.Parent := UninstallProgressForm;
+  InfoLabel.Caption := '※ チェックすると学習データや登録した単語が削除されます';
+  InfoLabel.Left := ScaleX(35);
+  InfoLabel.Top := CleanUserDataCheckBox.Top + CleanUserDataCheckBox.Height + ScaleY(5);
+  InfoLabel.Width := ScaleX(400);
+  InfoLabel.Height := ScaleY(15);
+  InfoLabel.Font.Size := 8;
+  InfoLabel.Font.Color := clGray;
+end;
+
+// ユーザーデータディレクトリを削除する
+procedure CleanupUserData();
+var
+  AppDataPath: string;
+  AzookeyDataPath: string;
+begin
+  AppDataPath := ExpandConstant('{userappdata}');
+  AzookeyDataPath := AppDataPath + '\Azookey';
+  
+  if DirExists(AzookeyDataPath) then
+  begin
+    // 各サブディレクトリを削除
+    DelTree(AzookeyDataPath + '\memory', True, True, True);
+    DelTree(AzookeyDataPath + '\user_dictionary', True, True, True);
+    DelTree(AzookeyDataPath + '\logs', True, True, True);
+    
+    // 設定ファイルを削除
+    DeleteFile(AzookeyDataPath + '\settings.json');
+    
+    // 空のディレクトリを削除（中身がある場合は削除されない）
+    RemoveDir(AzookeyDataPath);
+    
+    Log('User data cleaned up: ' + AzookeyDataPath);
+  end;
+end;
 function InitializeSetup: Boolean;
 begin
   ExtractTemporaryFile('Azookey_0.1.0_x64-setup.exe');
@@ -171,6 +229,12 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
   begin
+    // ユーザーデータ削除オプションがチェックされている場合
+    if (CleanUserDataCheckBox <> nil) and CleanUserDataCheckBox.Checked then
+    begin
+      CleanupUserData();
+    end;
+    
     UninstallAzookey();
   end;
 end;

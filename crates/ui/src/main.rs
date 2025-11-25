@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use tonic::transport::Server;
 use uiaccess::prepare_uiaccess_token;
-use utils::get_candidate_window_position;
+use utils::{get_candidate_window_position, get_indicator_window_position};
 use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE,
 };
@@ -252,10 +252,14 @@ async fn main() -> anyhow::Result<()> {
                                 );
                             }
                             candidate_window
-                                .set_outer_position(PhysicalPosition::new(x as f64, y as f64));
+                                .set_outer_position(PhysicalPosition::new(x, y));
+
+                            // インジケーターの位置もDPIスケーリングを考慮
+                            let (indicator_x, indicator_y) =
+                                get_indicator_window_position(left, bottom);
                             indicator_window.set_outer_position(PhysicalPosition::new(
-                                (left - 45) as f64,
-                                bottom as f64,
+                                indicator_x,
+                                indicator_y,
                             ));
                         }
                         WindowAction::SetCandidate { candidates } => {

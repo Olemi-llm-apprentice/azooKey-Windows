@@ -23,7 +23,8 @@
 | [features.md](./features.md) | 機能一覧（実装済み・未実装） | - |
 | [learning-history.md](./learning-history.md) | 履歴学習機能 | ✅ 実装済み |
 | [user-dictionary.md](./user-dictionary.md) | ユーザー辞書機能 | ✅ 実装済み |
-| prediction.md | 予測変換 | 📝 予定 |
+| [v0.2.0-improvements.md](./v0.2.0-improvements.md) | v0.2.0改善項目（DPI対応、ログ改善、インストーラ改善） | ✅ 実装済み |
+| [prediction.md](./prediction.md) | 予測変換 | ✅ 実装済み |
 | magic-conversion.md | いい感じ変換 | 📝 予定 |
 | theme.md | テーマ機能 | 📝 予定 |
 

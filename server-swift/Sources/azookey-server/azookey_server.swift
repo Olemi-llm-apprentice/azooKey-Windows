@@ -10,6 +10,7 @@ import ffi
     "enable": false,
     "profile": "",
     "learningEnabled": true,
+    "predictionEnabled": true,
     "shouldResetMemory": false,
 ]
 
@@ -37,6 +38,7 @@ import ffi
 
 @MainActor func getOptions(context: String = "") -> ConvertRequestOptions {
     let learningEnabled = (config["learningEnabled"] as? Bool) ?? true
+    let predictionEnabled = (config["predictionEnabled"] as? Bool) ?? true
     let shouldReset = (config["shouldResetMemory"] as? Bool) ?? false
     
     // リセットフラグが立っていたらクリア
@@ -45,7 +47,7 @@ import ffi
     }
     
     return ConvertRequestOptions(
-        requireJapanesePrediction: true,
+        requireJapanesePrediction: predictionEnabled,
         requireEnglishPrediction: false,
         keyboardLanguage: .ja_JP,
         learningType: learningEnabled ? .inputAndOutput : .nothing,
@@ -129,6 +131,13 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
                 if let learningDict = json["learning"] as? [String: Any] {
                     if let enabledValue = learningDict["enabled"] as? Bool {
                         config["learningEnabled"] = enabledValue
+                    }
+                }
+                
+                // 予測変換設定の読み込み
+                if let predictionDict = json["prediction"] as? [String: Any] {
+                    if let enabledValue = predictionDict["enabled"] as? Bool {
+                        config["predictionEnabled"] = enabledValue
                     }
                 }
             }

@@ -3,6 +3,9 @@
     "learning": {
         "enabled": true
     },
+    "prediction": {
+        "enabled": true
+    },
     "zenzai": {
         "enable": false,
         "profile": "",

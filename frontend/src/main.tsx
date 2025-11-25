@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 
 import { General } from "@/pages/general"
 import { Learning } from "@/pages/learning"
+import { Prediction } from "@/pages/prediction"
 import { Dictionary } from "@/pages/dictionary"
 import { Appearance } from "@/pages/appearance"
 import { Zenzai } from "@/pages/zenzai"
@@ -24,6 +25,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
             <Routes>
               <Route path="/" element={<General />} />
               <Route path="/learning" element={<Learning />} />
+              <Route path="/prediction" element={<Prediction />} />
               <Route path="/dictionary" element={<Dictionary />} />
               <Route path="/appearance" element={<Appearance />} />
               <Route path="/zenzai" element={<Zenzai />} />
