@@ -18,5 +18,27 @@
         "model": "gpt-4o-mini",
         "max_tokens": 256,
         "temperature": 0.7
+    },
+    "keybindings": {
+        "toggle_input_mode": [
+            { "key": "Zenkaku/Hankaku" }
+        ],
+        "set_kana_mode": [],
+        "set_latin_mode": [],
+        "convert_hiragana": [
+            { "key": "F6" }
+        ],
+        "convert_katakana": [
+            { "key": "F7" }
+        ],
+        "convert_half_katakana": [
+            { "key": "F8" }
+        ],
+        "convert_full_latin": [
+            { "key": "F9" }
+        ],
+        "convert_half_latin": [
+            { "key": "F10" }
+        ]
     }
 }

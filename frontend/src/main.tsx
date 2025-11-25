@@ -11,6 +11,7 @@ import { Learning } from "@/pages/learning"
 import { Prediction } from "@/pages/prediction"
 import { Dictionary } from "@/pages/dictionary"
 import { Iikanji } from "@/pages/iikanji"
+import { Keybindings } from "@/pages/keybindings"
 import { Appearance } from "@/pages/appearance"
 import { Zenzai } from "@/pages/zenzai"
 import { About } from "@/pages/about"
@@ -29,6 +30,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
               <Route path="/prediction" element={<Prediction />} />
               <Route path="/dictionary" element={<Dictionary />} />
               <Route path="/iikanji" element={<Iikanji />} />
+              <Route path="/keybindings" element={<Keybindings />} />
               <Route path="/appearance" element={<Appearance />} />
               <Route path="/zenzai" element={<Zenzai />} />
               <Route path="/about" element={<About />} />

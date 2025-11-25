@@ -518,3 +518,78 @@ test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 - v0.3.0の「いい感じ変換」タスクが完了
 
 ---
+
+[2025-11-26 03:30:00]
+
+## 作業内容
+
+カスタムキーバインド機能の設計と実装
+
+### 実施した作業
+
+- **設計仕様書の作成**
+  - `docs/specs/keybindings.md` を新規作成
+  - カスタマイズ可能なアクション定義、キーコードマッピング、UI設計を記載
+
+- **共有ライブラリにキーバインド設定を追加**
+  - `KeyBinding` 構造体を追加
+  - `KeybindingsConfig` 構造体を追加（8種類のアクションに対応）
+  - `KeyAction` 列挙型を追加
+  - `key_name_to_code` / `key_code_to_name` 変換関数を追加
+  - `AppConfig` に `keybindings` フィールドを追加
+  - 7件のユニットテストを追加（tc_kb_01〜tc_kb_07）
+
+- **設定アプリにキーバインド設定ページを追加**
+  - `frontend/src/pages/keybindings.tsx` を新規作成
+  - キー入力キャプチャダイアログ
+  - キーバインドの追加/削除UI
+  - デフォルトに戻す機能
+  - サイドバーにリンク追加
+
+- **ドキュメント更新**
+  - `docs/specs/README.md` - 仕様書インデックス更新
+  - `docs/specs/roadmap.md` - v0.3.0のキーバインド機能を追加
+
+### 変更したファイル
+
+- `docs/specs/keybindings.md` - カスタムキーバインド設計仕様書（新規作成）
+- `settings.json` - キーバインド設定セクションを追加
+- `crates/shared/src/lib.rs` - `KeybindingsConfig` を追加、テスト追加
+- `frontend/src/pages/keybindings.tsx` - キーバインド設定ページ（新規作成）
+- `frontend/src/components/app-sidebar.tsx` - サイドバーにキーバインドリンク追加
+- `frontend/src/main.tsx` - ルート追加
+- `docs/specs/README.md` - 仕様書インデックス更新
+- `docs/specs/roadmap.md` - ロードマップ更新
+
+### テスト実行コマンド
+
+```powershell
+cargo test --manifest-path crates/shared/Cargo.toml
+```
+
+### テスト結果
+
+```
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+### テスト観点表
+
+| Case ID | Perspective | Expected Result |
+|---------|-------------|-----------------|
+| TC-KB-01 | デフォルト値 | Zenkaku/Hankaku, F6-F10 |
+| TC-KB-02 | キー名→コード変換 | F13=0x7C, F14=0x7D |
+| TC-KB-03 | キーコード→名前変換 | 0x7C=F13 |
+| TC-KB-04 | キーマッチング | F13キーがマッチする |
+| TC-KB-05 | アクション取得 | 各キーに対応するアクション |
+| TC-KB-06 | シリアライズ/デシリアライズ | 正しく変換される |
+| TC-KB-07 | 複数キー同一アクション | どちらでも動作 |
+
+### 備考
+
+- 対応キー: F1〜F24、全角/半角、変換、無変換、かな
+- 設定アプリでキー入力キャプチャによる設定が可能
+- IMEクライアント側での設定読み込み・適用は別途実装が必要（TODO）
+- v0.3.0の「カスタムキーバインド」タスクの設定UI部分が完了
+
+---

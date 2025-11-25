@@ -1,4 +1,4 @@
-import { Bot, Settings, Megaphone, BookOpen, Book, Lightbulb, Sparkles } from "lucide-react"
+import { Bot, Settings, Megaphone, BookOpen, Book, Lightbulb, Sparkles, Keyboard } from "lucide-react"
 
 import {
     Sidebar,
@@ -38,6 +38,11 @@ const contents = [
         title: "いい感じ変換",
         url: "/iikanji",
         icon: Sparkles,
+    },
+    {
+        title: "キーバインド",
+        url: "/keybindings",
+        icon: Keyboard,
     },
     // {
     //     title: "外観",

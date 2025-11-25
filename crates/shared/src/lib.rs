@@ -61,6 +61,217 @@ impl Default for IikanjiConfig {
     }
 }
 
+// キーバインド設定
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct KeyBinding {
+    pub key: String,
+    #[serde(default)]
+    pub modifiers: Vec<String>,
+}
+
+impl KeyBinding {
+    pub fn new(key: &str) -> Self {
+        KeyBinding {
+            key: key.to_string(),
+            modifiers: Vec::new(),
+        }
+    }
+
+    pub fn with_modifiers(key: &str, modifiers: Vec<&str>) -> Self {
+        KeyBinding {
+            key: key.to_string(),
+            modifiers: modifiers.into_iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    /// キーコードを取得
+    pub fn get_key_code(&self) -> Option<u32> {
+        key_name_to_code(&self.key)
+    }
+
+    /// キーコードが一致するか判定
+    pub fn matches(&self, key_code: u32) -> bool {
+        self.get_key_code() == Some(key_code)
+    }
+}
+
+/// キー名から仮想キーコードに変換
+pub fn key_name_to_code(name: &str) -> Option<u32> {
+    match name.to_lowercase().as_str() {
+        // ファンクションキー
+        "f1" => Some(0x70),
+        "f2" => Some(0x71),
+        "f3" => Some(0x72),
+        "f4" => Some(0x73),
+        "f5" => Some(0x74),
+        "f6" => Some(0x75),
+        "f7" => Some(0x76),
+        "f8" => Some(0x77),
+        "f9" => Some(0x78),
+        "f10" => Some(0x79),
+        "f11" => Some(0x7A),
+        "f12" => Some(0x7B),
+        "f13" => Some(0x7C),
+        "f14" => Some(0x7D),
+        "f15" => Some(0x7E),
+        "f16" => Some(0x7F),
+        "f17" => Some(0x80),
+        "f18" => Some(0x81),
+        "f19" => Some(0x82),
+        "f20" => Some(0x83),
+        "f21" => Some(0x84),
+        "f22" => Some(0x85),
+        "f23" => Some(0x86),
+        "f24" => Some(0x87),
+
+        // 日本語入力関連キー
+        "zenkaku/hankaku" | "zenkaku" | "hankaku" | "zenkakuhankaku" => Some(0xF3),
+        "henkan" | "convert" => Some(0x1C),
+        "muhenkan" | "nonconvert" => Some(0x1D),
+        "hiragana" | "kana" | "katakana" => Some(0x15),
+
+        _ => None,
+    }
+}
+
+/// キーコードからキー名に変換
+pub fn key_code_to_name(code: u32) -> Option<&'static str> {
+    match code {
+        0x70 => Some("F1"),
+        0x71 => Some("F2"),
+        0x72 => Some("F3"),
+        0x73 => Some("F4"),
+        0x74 => Some("F5"),
+        0x75 => Some("F6"),
+        0x76 => Some("F7"),
+        0x77 => Some("F8"),
+        0x78 => Some("F9"),
+        0x79 => Some("F10"),
+        0x7A => Some("F11"),
+        0x7B => Some("F12"),
+        0x7C => Some("F13"),
+        0x7D => Some("F14"),
+        0x7E => Some("F15"),
+        0x7F => Some("F16"),
+        0x80 => Some("F17"),
+        0x81 => Some("F18"),
+        0x82 => Some("F19"),
+        0x83 => Some("F20"),
+        0x84 => Some("F21"),
+        0x85 => Some("F22"),
+        0x86 => Some("F23"),
+        0x87 => Some("F24"),
+        0xF3 | 0xF4 => Some("Zenkaku/Hankaku"),
+        0x1C => Some("Henkan"),
+        0x1D => Some("Muhenkan"),
+        0x15 => Some("Hiragana"),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct KeybindingsConfig {
+    #[serde(default = "KeybindingsConfig::default_toggle_input_mode")]
+    pub toggle_input_mode: Vec<KeyBinding>,
+    #[serde(default)]
+    pub set_kana_mode: Vec<KeyBinding>,
+    #[serde(default)]
+    pub set_latin_mode: Vec<KeyBinding>,
+    #[serde(default = "KeybindingsConfig::default_convert_hiragana")]
+    pub convert_hiragana: Vec<KeyBinding>,
+    #[serde(default = "KeybindingsConfig::default_convert_katakana")]
+    pub convert_katakana: Vec<KeyBinding>,
+    #[serde(default = "KeybindingsConfig::default_convert_half_katakana")]
+    pub convert_half_katakana: Vec<KeyBinding>,
+    #[serde(default = "KeybindingsConfig::default_convert_full_latin")]
+    pub convert_full_latin: Vec<KeyBinding>,
+    #[serde(default = "KeybindingsConfig::default_convert_half_latin")]
+    pub convert_half_latin: Vec<KeyBinding>,
+}
+
+impl KeybindingsConfig {
+    fn default_toggle_input_mode() -> Vec<KeyBinding> {
+        vec![KeyBinding::new("Zenkaku/Hankaku")]
+    }
+
+    fn default_convert_hiragana() -> Vec<KeyBinding> {
+        vec![KeyBinding::new("F6")]
+    }
+
+    fn default_convert_katakana() -> Vec<KeyBinding> {
+        vec![KeyBinding::new("F7")]
+    }
+
+    fn default_convert_half_katakana() -> Vec<KeyBinding> {
+        vec![KeyBinding::new("F8")]
+    }
+
+    fn default_convert_full_latin() -> Vec<KeyBinding> {
+        vec![KeyBinding::new("F9")]
+    }
+
+    fn default_convert_half_latin() -> Vec<KeyBinding> {
+        vec![KeyBinding::new("F10")]
+    }
+
+    /// キーコードに対応するアクションを取得
+    pub fn get_action(&self, key_code: u32) -> Option<KeyAction> {
+        if self.toggle_input_mode.iter().any(|kb| kb.matches(key_code)) {
+            return Some(KeyAction::ToggleInputMode);
+        }
+        if self.set_kana_mode.iter().any(|kb| kb.matches(key_code)) {
+            return Some(KeyAction::SetKanaMode);
+        }
+        if self.set_latin_mode.iter().any(|kb| kb.matches(key_code)) {
+            return Some(KeyAction::SetLatinMode);
+        }
+        if self.convert_hiragana.iter().any(|kb| kb.matches(key_code)) {
+            return Some(KeyAction::ConvertHiragana);
+        }
+        if self.convert_katakana.iter().any(|kb| kb.matches(key_code)) {
+            return Some(KeyAction::ConvertKatakana);
+        }
+        if self.convert_half_katakana.iter().any(|kb| kb.matches(key_code)) {
+            return Some(KeyAction::ConvertHalfKatakana);
+        }
+        if self.convert_full_latin.iter().any(|kb| kb.matches(key_code)) {
+            return Some(KeyAction::ConvertFullLatin);
+        }
+        if self.convert_half_latin.iter().any(|kb| kb.matches(key_code)) {
+            return Some(KeyAction::ConvertHalfLatin);
+        }
+        None
+    }
+}
+
+impl Default for KeybindingsConfig {
+    fn default() -> Self {
+        KeybindingsConfig {
+            toggle_input_mode: Self::default_toggle_input_mode(),
+            set_kana_mode: Vec::new(),
+            set_latin_mode: Vec::new(),
+            convert_hiragana: Self::default_convert_hiragana(),
+            convert_katakana: Self::default_convert_katakana(),
+            convert_half_katakana: Self::default_convert_half_katakana(),
+            convert_full_latin: Self::default_convert_full_latin(),
+            convert_half_latin: Self::default_convert_half_latin(),
+        }
+    }
+}
+
+/// キーバインドで設定可能なアクション
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyAction {
+    ToggleInputMode,
+    SetKanaMode,
+    SetLatinMode,
+    ConvertHiragana,
+    ConvertKatakana,
+    ConvertHalfKatakana,
+    ConvertFullLatin,
+    ConvertHalfLatin,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ZenzaiConfig {
     pub enable: bool,
@@ -76,6 +287,8 @@ pub struct AppConfig {
     pub zenzai: ZenzaiConfig,
     #[serde(default)]
     pub iikanji: IikanjiConfig,
+    #[serde(default)]
+    pub keybindings: KeybindingsConfig,
 }
 
 impl Default for AppConfig {
@@ -90,6 +303,7 @@ impl Default for AppConfig {
                 backend: "cpu".to_string(),
             },
             iikanji: IikanjiConfig::default(),
+            keybindings: KeybindingsConfig::default(),
         }
     }
 }
@@ -292,6 +506,9 @@ mod tests {
         assert_eq!(config.iikanji.model, "gpt-4o-mini");
         assert_eq!(config.iikanji.max_tokens, 256);
         assert!((config.iikanji.temperature - 0.7).abs() < 0.01);
+        // キーバインドのデフォルト値
+        assert_eq!(config.keybindings.toggle_input_mode.len(), 1);
+        assert_eq!(config.keybindings.toggle_input_mode[0].key, "Zenkaku/Hankaku");
     }
 
     #[test]
@@ -428,6 +645,104 @@ mod tests {
         
         // Then: api_keyはデフォルト（空文字列）
         assert_eq!(config.api_key, "");
+    }
+
+    // ==========================================
+    // KeybindingsConfig テスト
+    // ==========================================
+
+    #[test]
+    fn tc_kb_01_keybindings_config_default() {
+        // Given: デフォルト設定を作成
+        // When: KeybindingsConfig::default() を呼び出す
+        let config = KeybindingsConfig::default();
+        
+        // Then: デフォルトのキーバインドが設定されている
+        assert_eq!(config.toggle_input_mode.len(), 1);
+        assert_eq!(config.toggle_input_mode[0].key, "Zenkaku/Hankaku");
+        assert_eq!(config.convert_hiragana[0].key, "F6");
+        assert_eq!(config.convert_katakana[0].key, "F7");
+        assert_eq!(config.convert_half_katakana[0].key, "F8");
+        assert_eq!(config.convert_full_latin[0].key, "F9");
+        assert_eq!(config.convert_half_latin[0].key, "F10");
+    }
+
+    #[test]
+    fn tc_kb_02_key_name_to_code() {
+        // Given: 各種キー名
+        // When: key_name_to_code を呼び出す
+        // Then: 正しいキーコードが返される
+        assert_eq!(key_name_to_code("F13"), Some(0x7C));
+        assert_eq!(key_name_to_code("F14"), Some(0x7D));
+        assert_eq!(key_name_to_code("f6"), Some(0x75));
+        assert_eq!(key_name_to_code("Zenkaku/Hankaku"), Some(0xF3));
+        assert_eq!(key_name_to_code("muhenkan"), Some(0x1D));
+        assert_eq!(key_name_to_code("invalid_key"), None);
+    }
+
+    #[test]
+    fn tc_kb_03_key_code_to_name() {
+        // Given: 各種キーコード
+        // When: key_code_to_name を呼び出す
+        // Then: 正しいキー名が返される
+        assert_eq!(key_code_to_name(0x7C), Some("F13"));
+        assert_eq!(key_code_to_name(0x7D), Some("F14"));
+        assert_eq!(key_code_to_name(0x75), Some("F6"));
+        assert_eq!(key_code_to_name(0xF3), Some("Zenkaku/Hankaku"));
+        assert_eq!(key_code_to_name(0x1D), Some("Muhenkan"));
+        assert_eq!(key_code_to_name(0x00), None);
+    }
+
+    #[test]
+    fn tc_kb_04_keybinding_matches() {
+        // Given: F13キーバインド
+        let kb = KeyBinding::new("F13");
+        
+        // When/Then: F13キーコード(0x7C)にマッチする
+        assert!(kb.matches(0x7C));
+        assert!(!kb.matches(0x7D)); // F14にはマッチしない
+    }
+
+    #[test]
+    fn tc_kb_05_keybindings_get_action() {
+        // Given: カスタムキーバインド設定
+        let mut config = KeybindingsConfig::default();
+        config.toggle_input_mode.push(KeyBinding::new("F13"));
+        config.set_kana_mode.push(KeyBinding::new("F14"));
+        
+        // When/Then: 各キーに対応するアクションが返される
+        assert_eq!(config.get_action(0x7C), Some(KeyAction::ToggleInputMode)); // F13
+        assert_eq!(config.get_action(0x7D), Some(KeyAction::SetKanaMode)); // F14
+        assert_eq!(config.get_action(0x75), Some(KeyAction::ConvertHiragana)); // F6
+        assert_eq!(config.get_action(0x00), None); // 未設定キー
+    }
+
+    #[test]
+    fn tc_kb_06_keybindings_serialize_deserialize() {
+        // Given: キーバインド設定
+        let mut config = KeybindingsConfig::default();
+        config.toggle_input_mode.push(KeyBinding::new("F13"));
+        
+        // When: JSON にシリアライズしてデシリアライズ
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: KeybindingsConfig = serde_json::from_str(&json).unwrap();
+        
+        // Then: 元の値と一致する
+        assert_eq!(config.toggle_input_mode.len(), deserialized.toggle_input_mode.len());
+        assert_eq!(deserialized.toggle_input_mode[1].key, "F13");
+    }
+
+    #[test]
+    fn tc_kb_07_multiple_keys_same_action() {
+        // Given: 複数のキーを同じアクションに割り当て
+        let mut config = KeybindingsConfig::default();
+        config.toggle_input_mode.push(KeyBinding::new("F13"));
+        config.toggle_input_mode.push(KeyBinding::new("F14"));
+        
+        // When/Then: どちらのキーでもToggleInputModeが返される
+        assert_eq!(config.get_action(0xF3), Some(KeyAction::ToggleInputMode)); // Zenkaku/Hankaku
+        assert_eq!(config.get_action(0x7C), Some(KeyAction::ToggleInputMode)); // F13
+        assert_eq!(config.get_action(0x7D), Some(KeyAction::ToggleInputMode)); // F14
     }
 
     // ==========================================
