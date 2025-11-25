@@ -7,3 +7,6 @@ logs/*
 *.gguf
 *.dll
 *.lib
+
+# Temporary files for git operations (commit messages, PR content, etc.)
+tools/git/

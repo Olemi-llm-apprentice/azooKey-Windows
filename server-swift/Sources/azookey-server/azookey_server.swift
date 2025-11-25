@@ -9,17 +9,51 @@ import ffi
 @MainActor var config: [String : Any] = [
     "enable": false,
     "profile": "",
+    "learningEnabled": true,
+    "shouldResetMemory": false,
 ]
 
+// 学習データの保存先ディレクトリ
+@MainActor var memoryURL: URL = {
+    if let appDataPath = ProcessInfo.processInfo.environment["APPDATA"] {
+        let url = URL(filePath: appDataPath).appendingPathComponent("Azookey/memory")
+        // ディレクトリが存在しない場合は作成
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+    return URL(filePath: "./memory")
+}()
+
+// ユーザー辞書の保存先ディレクトリ
+@MainActor var userDictionaryURL: URL = {
+    if let appDataPath = ProcessInfo.processInfo.environment["APPDATA"] {
+        let url = URL(filePath: appDataPath).appendingPathComponent("Azookey/user_dictionary")
+        // ディレクトリが存在しない場合は作成
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+    return URL(filePath: "./user_dictionary")
+}()
+
 @MainActor func getOptions(context: String = "") -> ConvertRequestOptions {
+    let learningEnabled = (config["learningEnabled"] as? Bool) ?? true
+    let shouldReset = (config["shouldResetMemory"] as? Bool) ?? false
+    
+    // リセットフラグが立っていたらクリア
+    if shouldReset {
+        config["shouldResetMemory"] = false
+    }
+    
     return ConvertRequestOptions(
         requireJapanesePrediction: true,
         requireEnglishPrediction: false,
         keyboardLanguage: .ja_JP,
-        learningType: .nothing,
+        learningType: learningEnabled ? .inputAndOutput : .nothing,
+        maxMemoryCount: 65536,
+        shouldResetMemory: shouldReset,
         dictionaryResourceURL: execURL.appendingPathComponent("Dictionary"),
-        memoryDirectoryURL: URL(filePath: "./test"),
-        sharedContainerURL: URL(filePath: "./test"),
+        memoryDirectoryURL: memoryURL,
+        sharedContainerURL: userDictionaryURL,
         textReplacer: .init {
             return execURL.appendingPathComponent("EmojiDictionary").appendingPathComponent("emoji_all_E15.1.txt")
         },
@@ -79,21 +113,42 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
         
         do {
             let data = try Data(contentsOf: settingsPath)
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let zenzaiDict = json["zenzai"] as? [String: Any] {
-                
-                if let enableValue = zenzaiDict["enable"] as? Bool {
-                    config["enable"] = enableValue
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                // Zenzai設定の読み込み
+                if let zenzaiDict = json["zenzai"] as? [String: Any] {
+                    if let enableValue = zenzaiDict["enable"] as? Bool {
+                        config["enable"] = enableValue
+                    }
+                    
+                    if let profileValue = zenzaiDict["profile"] as? String {
+                        config["profile"] = profileValue
+                    }
                 }
                 
-                if let profileValue = zenzaiDict["profile"] as? String {
-                    config["profile"] = profileValue
+                // 学習設定の読み込み
+                if let learningDict = json["learning"] as? [String: Any] {
+                    if let enabledValue = learningDict["enabled"] as? Bool {
+                        config["learningEnabled"] = enabledValue
+                    }
                 }
             }
         } catch {
             print("Failed to read settings: \(error)")
         }
     }
+}
+
+@_silgen_name("ResetLearning")
+@MainActor public func reset_learning() {
+    // 次回の変換リクエスト時にリセットフラグを立てる
+    config["shouldResetMemory"] = true
+    
+    // 即座にリセットを反映するためにダミーの変換を実行
+    var tempComposingText = ComposingText()
+    tempComposingText.insertAtCursorPosition("a", inputStyle: .roman2kana)
+    _ = converter.requestCandidates(tempComposingText, options: getOptions())
+    
+    print("Learning data reset requested")
 }
 
 @_silgen_name("Initialize")

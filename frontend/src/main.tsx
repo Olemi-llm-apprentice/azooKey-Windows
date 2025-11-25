@@ -7,6 +7,8 @@ import { BrowserRouter, Routes, Route } from "react-router";
 import { AppSidebar } from "@/components/app-sidebar"
 
 import { General } from "@/pages/general"
+import { Learning } from "@/pages/learning"
+import { Dictionary } from "@/pages/dictionary"
 import { Appearance } from "@/pages/appearance"
 import { Zenzai } from "@/pages/zenzai"
 import { About } from "@/pages/about"
@@ -21,6 +23,8 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
           <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
             <Routes>
               <Route path="/" element={<General />} />
+              <Route path="/learning" element={<Learning />} />
+              <Route path="/dictionary" element={<Dictionary />} />
               <Route path="/appearance" element={<Appearance />} />
               <Route path="/zenzai" element={<Zenzai />} />
               <Route path="/about" element={<About />} />
