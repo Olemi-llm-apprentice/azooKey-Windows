@@ -270,6 +270,42 @@ mod tests {
         assert!(config.enabled, "デフォルトでは予測変換が有効であるべき");
     }
 
+    #[test]
+    fn tc_p_01_prediction_config_disabled() {
+        // Given: 予測変換を無効化した設定
+        // When: PredictionConfig を作成して enabled を false に設定
+        let config = PredictionConfig { enabled: false };
+        
+        // Then: enabled は false である
+        assert!(!config.enabled, "予測変換が無効化されているべき");
+    }
+
+    #[test]
+    fn tc_p_02_prediction_config_serialize_deserialize() {
+        // Given: 予測変換設定
+        let config = PredictionConfig { enabled: true };
+        
+        // When: JSON にシリアライズしてデシリアライズ
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: PredictionConfig = serde_json::from_str(&json).unwrap();
+        
+        // Then: 元の値と一致する
+        assert_eq!(config.enabled, deserialized.enabled);
+    }
+
+    #[test]
+    fn tc_p_03_app_config_with_prediction_serialize() {
+        // Given: AppConfig全体
+        let config = AppConfig::default();
+        
+        // When: JSON にシリアライズ
+        let json = serde_json::to_string(&config).unwrap();
+        
+        // Then: prediction フィールドが含まれる
+        assert!(json.contains("\"prediction\""), "JSONにpredictionフィールドが含まれるべき");
+        assert!(json.contains("\"enabled\":true"), "prediction.enabledがtrueであるべき");
+    }
+
     // ==========================================
     // UserDictEntry テスト
     // ==========================================

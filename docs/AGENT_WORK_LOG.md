@@ -383,3 +383,54 @@ client クレート: 10 passed; 0 failed
 - v0.3.0の予測変換タスクが完了
 
 ---
+
+[2025-11-26 02:50:41]
+
+## 作業内容
+
+予測変換機能のユニットテスト追加
+
+### 実施した作業
+
+- テスト戦略ルールに基づいたテスト観点表の作成
+- `crates/shared` に予測変換関連のユニットテストを4件追加
+  - `tc_l_03_prediction_config_default` - デフォルト値テスト
+  - `tc_p_01_prediction_config_disabled` - 無効化設定テスト
+  - `tc_p_02_prediction_config_serialize_deserialize` - JSON変換テスト
+  - `tc_p_03_app_config_with_prediction_serialize` - AppConfig全体のJSON変換テスト
+- 全テスト実行・パス確認
+
+### 変更したファイル
+
+- `crates/shared/src/lib.rs` - 予測変換関連テストを追加
+
+### テスト実行コマンド
+
+```powershell
+cargo test --manifest-path crates/shared/Cargo.toml
+cargo test --manifest-path crates/client/Cargo.toml
+```
+
+### テスト結果
+
+```
+shared クレート: 22 passed; 0 failed
+client クレート: 10 passed; 0 failed
+合計: 32件パス
+```
+
+### テスト観点表
+
+| Case ID | Perspective | Expected Result |
+|---------|-------------|-----------------|
+| TC-L-03 | デフォルト値 | enabled: true |
+| TC-P-01 | 無効化設定 | enabled: false |
+| TC-P-02 | シリアライズ | 正しく変換される |
+| TC-P-03 | AppConfig変換 | predictionフィールドを含む |
+
+### 備考
+
+- 予測変換設定のテストはsharedクレートで実施
+- Given/When/Then コメント形式でテストを記述
+
+---
