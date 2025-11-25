@@ -3606,6 +3606,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
+ "tempfile",
  "tonic",
  "tonic-build",
 ]

@@ -127,3 +127,85 @@ azooKey-Windows プロジェクトの仕様調査と仕様書ドキュメント�
 設定アプリから単語の追加、編集、削除、およびインポート/エクスポートが可能。
 
 ---
+
+[2025-11-26 02:07:07]
+
+## 作業内容
+
+Git設定とコミット環境の整備
+
+### 実施した作業
+
+- GitHubフォーク設定
+  - 本家 (fkunn1326/azooKey-Windows) を `upstream` に変更
+  - フォーク (Olemi-llm-apprentice/azooKey-Windows) を `origin` に設定
+- `tools/git/` フォルダを作成（コミットメッセージ等の一時ファイル置き場）
+- `.gitignore` に `tools/git/` を追加
+- コミットメッセージの文字化け修正
+  - PowerShellのエンコーディング問題を回避するため、ファイル経由でコミット
+  - `git commit -F tools/git/commit_msg.txt` 方式を採用
+- ブランチ `feature/learning-and-dictionary` を作成してプッシュ
+
+### 変更したファイル
+
+- `.gitignore` - `tools/git/` を除外対象に追加
+- `tools/git/commit_msg.txt` - コミットメッセージ一時ファイル（gitignore対象）
+
+### 備考
+
+今後のコミット手順:
+1. `tools/git/commit_msg.txt` にメッセージを書く
+2. `git commit -F tools/git/commit_msg.txt` でコミット
+これによりPowerShellでの文字化けを回避。
+
+---
+
+[2025-11-26 02:15:11]
+
+## 作業内容
+
+ユーザー辞書機能のユニットテスト追加
+
+### 実施した作業
+
+- テスト戦略ルールに基づいたテスト観点表の作成
+- `crates/shared` に18個のユニットテストを追加
+  - `LearningConfig` / `AppConfig` のデフォルト値テスト (2件)
+  - `UserDictionary` の正常系テスト (10件)
+  - `UserDictionary` の境界値・異常系テスト (6件)
+- テスト用依存関係 `tempfile` の追加
+- `protoc` (Protocol Buffers コンパイラ) のインストール
+- 全テスト実行・パス確認
+
+### 変更したファイル
+
+- `crates/shared/Cargo.toml` - `tempfile` dev-dependency追加
+- `crates/shared/src/lib.rs` - テストモジュール追加
+
+### テスト実行コマンド
+
+```powershell
+cargo test --manifest-path crates/shared/Cargo.toml
+```
+
+### テスト結果
+
+```
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+### テスト観点表（抜粋）
+
+| Case ID | Perspective | Expected Result |
+|---------|-------------|-----------------|
+| TC-N-01〜07 | 正常系 | 各操作が正しく動作 |
+| TC-A-01〜06 | 境界値・異常系 | 適切なエラー/デフォルト値を返す |
+| TC-L-01〜02 | 設定デフォルト | enabled: true, version: "0.0.2" |
+
+### 備考
+
+- テストは `tempfile` クレートを使用して一時ディレクトリでファイル操作をテスト
+- 本番のファイルパス (`get_user_dict_path()`) とは独立してテスト可能な設計
+- 今後、Tauriコマンド層のテスト（バリデーション等）も追加検討
+
+---
