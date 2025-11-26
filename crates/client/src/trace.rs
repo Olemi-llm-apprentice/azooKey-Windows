@@ -290,7 +290,12 @@ mod tests {
         let remaining: Vec<_> = fs::read_dir(&log_dir)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map(|ext| ext == "json").unwrap_or(false))
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "json")
+                    .unwrap_or(false)
+            })
             .collect();
         assert_eq!(remaining.len(), 10);
     }
@@ -320,12 +325,22 @@ mod tests {
         let remaining_json: Vec<_> = fs::read_dir(&log_dir)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map(|ext| ext == "json").unwrap_or(false))
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "json")
+                    .unwrap_or(false)
+            })
             .collect();
         let remaining_txt: Vec<_> = fs::read_dir(&log_dir)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map(|ext| ext == "txt").unwrap_or(false))
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "txt")
+                    .unwrap_or(false)
+            })
             .collect();
 
         assert_eq!(remaining_json.len(), 10);

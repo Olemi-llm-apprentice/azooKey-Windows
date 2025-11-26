@@ -4,13 +4,25 @@ use tonic_reflection::server::Builder as ReflectionBuilder;
 
 use shared::proto::azookey_service_server::{AzookeyService, AzookeyServiceServer};
 use shared::proto::{
-    AppendTextRequest, AppendTextResponse, ClearTextRequest, ClearTextResponse, ComposingText,
-    MoveCursorRequest, MoveCursorResponse, RemoveTextRequest, RemoveTextResponse,
-    ShrinkTextRequest, ShrinkTextResponse, Suggestion,
+    AppendTextRequest,
+    AppendTextResponse,
+    ClearTextRequest,
+    ClearTextResponse,
+    ComposingText,
+    IsIikanjiEnabledRequest,
+    IsIikanjiEnabledResponse,
     // いい感じ変換
-    IsIikanjiKeywordRequest, IsIikanjiKeywordResponse,
-    IsIikanjiEnabledRequest, IsIikanjiEnabledResponse,
-    RequestIikanjiRequest, RequestIikanjiResponse,
+    IsIikanjiKeywordRequest,
+    IsIikanjiKeywordResponse,
+    MoveCursorRequest,
+    MoveCursorResponse,
+    RemoveTextRequest,
+    RemoveTextResponse,
+    RequestIikanjiRequest,
+    RequestIikanjiResponse,
+    ShrinkTextRequest,
+    ShrinkTextResponse,
+    Suggestion,
 };
 
 use std::ffi::{c_char, c_int, CStr, CString};
@@ -41,7 +53,7 @@ unsafe extern "C" {
     fn ClearText();
     fn GetComposedText(lengthPtr: *mut c_int) -> *mut *mut FFICandidate;
     fn LoadConfig();
-    
+
     // いい感じ変換FFI関数
     fn IsIikanjiKeyword(input: *const c_char) -> bool;
     fn IsIikanjiEnabled() -> bool;
@@ -113,16 +125,38 @@ fn get_composed_text() -> Vec<Suggestion> {
     unsafe {
         let mut length: c_int = 0;
         let result = GetComposedText(&mut length);
+        
+        if result.is_null() {
+            eprintln!("[FFI] get_composed_text: result is null!");
+            return Vec::new();
+        }
+        
         let mut suggestions = Vec::with_capacity(length as usize);
 
         for index in 0..length as usize {
-            let candidate = (**result.add(index)).clone();
+            let candidate_ptr = result.add(index);
+            if candidate_ptr.is_null() || (*candidate_ptr).is_null() {
+                continue;
+            }
+            
+            let candidate = (**candidate_ptr).clone();
+            
+            if candidate.text.is_null() {
+                continue;
+            }
+            
             let text = CStr::from_ptr(candidate.text)
                 .to_string_lossy()
                 .into_owned();
-            let subtext = CStr::from_ptr(candidate.subtext)
-                .to_string_lossy()
-                .into_owned();
+            
+            let subtext = if candidate.subtext.is_null() {
+                String::new()
+            } else {
+                CStr::from_ptr(candidate.subtext)
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            
             let corresponding_count = candidate.corresponding_count;
 
             let suggestion = Suggestion {
@@ -141,6 +175,12 @@ fn get_composed_text() -> Vec<Suggestion> {
             suggestions.push(suggestion);
         }
 
+        // 上位5件のみログ表示
+        if !suggestions.is_empty() {
+            let top5: Vec<_> = suggestions.iter().take(5).map(|s| s.text.as_str()).collect();
+            eprintln!("[候補] {} 件 (上位5: {:?})", suggestions.len(), top5);
+        }
+        
         suggestions
     }
 }
@@ -175,18 +215,18 @@ fn request_iikanji(keyword: &str, context: &str) -> Option<String> {
     unsafe {
         let keyword = CString::new(keyword).expect("CString::new failed");
         let context = CString::new(context).expect("CString::new failed");
-        
+
         let result = RequestIikanji(keyword.as_ptr(), context.as_ptr());
-        
+
         if result.is_null() {
             return None;
         }
-        
+
         let result_str = CStr::from_ptr(&*result as *const c_char)
             .to_str()
             .ok()?
             .to_string();
-        
+
         Some(result_str)
     }
 }
@@ -200,13 +240,24 @@ impl AzookeyService for MyAzookeyService {
         &self,
         request: Request<AppendTextRequest>,
     ) -> Result<Response<AppendTextResponse>, Status> {
+        let start = std::time::Instant::now();
         let input = request.into_inner().text_to_append;
+        
+        let t1 = std::time::Instant::now();
         let composing_text = add_text(&input);
-
+        let add_time = t1.elapsed();
+        
+        let t2 = std::time::Instant::now();
+        let suggestions = get_composed_text();
+        let get_time = t2.elapsed();
+        
+        eprintln!("[入力] '{}' -> '{}' ({} 候補) [add:{:?} get:{:?} total:{:?}]", 
+            input, composing_text.text, suggestions.len(), add_time, get_time, start.elapsed());
+        
         Ok(Response::new(AppendTextResponse {
             composing_text: Some(ComposingText {
                 hiragana: composing_text.text,
-                suggestions: get_composed_text().to_vec(),
+                suggestions: suggestions.to_vec(),
             }),
         }))
     }
@@ -295,7 +346,7 @@ impl AzookeyService for MyAzookeyService {
     ) -> Result<Response<IsIikanjiKeywordResponse>, Status> {
         let input = request.into_inner().input;
         let is_keyword = is_iikanji_keyword(&input);
-        
+
         Ok(Response::new(IsIikanjiKeywordResponse { is_keyword }))
     }
 
@@ -305,7 +356,7 @@ impl AzookeyService for MyAzookeyService {
         _: Request<IsIikanjiEnabledRequest>,
     ) -> Result<Response<IsIikanjiEnabledResponse>, Status> {
         let enabled = is_iikanji_enabled();
-        
+
         Ok(Response::new(IsIikanjiEnabledResponse { enabled }))
     }
 
@@ -317,7 +368,7 @@ impl AzookeyService for MyAzookeyService {
         let req = request.into_inner();
         let keyword = req.keyword;
         let context = req.context;
-        
+
         match request_iikanji(&keyword, &context) {
             Some(result) => Ok(Response::new(RequestIikanjiResponse {
                 success: true,
@@ -333,19 +384,37 @@ impl AzookeyService for MyAzookeyService {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // パニックハンドラをセットして詳細情報を取得
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("=== PANIC DETECTED ===");
+        eprintln!("{}", panic_info);
+        if let Some(location) = panic_info.location() {
+            eprintln!("Location: {}:{}:{}", location.file(), location.line(), location.column());
+        }
+        eprintln!("======================");
+    }));
+
     println!("AzookeyServer started");
     // get executable directory
     let current_exe = std::env::current_exe()?;
     let parent_dir = current_exe.parent().unwrap();
+    println!("Executable directory: {:?}", parent_dir);
+    
+    println!("Initializing azookey...");
     initialize(parent_dir.to_str().unwrap());
+    println!("Initialization complete");
 
     let service = MyAzookeyService::default();
 
-    println!("AzookeyServer listening");
+    println!("Creating Named Pipe server...");
+    let incoming = TonicNamedPipeServer::new("azookey_server");
+    println!("Named Pipe server created");
 
-    Server::builder()
+    println!("AzookeyServer listening on \\\\.\\pipe\\azookey_server");
+
+    let result = Server::builder()
         .add_service(AzookeyServiceServer::new(service))
         .add_service(
             ReflectionBuilder::configure()
@@ -353,8 +422,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build_v1()
                 .unwrap(),
         )
-        .serve_with_incoming(TonicNamedPipeServer::new("azookey_server"))
-        .await?;
+        .serve_with_incoming(incoming)
+        .await;
+
+    match &result {
+        Ok(_) => println!("Server shut down gracefully"),
+        Err(e) => {
+            eprintln!("=== SERVER ERROR ===");
+            eprintln!("Error: {:?}", e);
+            eprintln!("====================");
+        }
+    }
+
+    result?;
 
     Ok(())
 }

@@ -251,8 +251,7 @@ async fn main() -> anyhow::Result<()> {
                                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
                                 );
                             }
-                            candidate_window
-                                .set_outer_position(PhysicalPosition::new(x, y));
+                            candidate_window.set_outer_position(PhysicalPosition::new(x, y));
 
                             // インジケーターの位置もDPIスケーリングを考慮
                             let (indicator_x, indicator_y) =

@@ -81,8 +81,7 @@ impl TonicNamedPipeServer {
                 SDDL_REVISION,
                 &mut security_descriptor,
                 None,
-            )
-            .unwrap();
+            ).expect("Failed to create security descriptor");
 
             let mut security_attributes = UnsafeSecurityAttributes(SECURITY_ATTRIBUTES {
                 nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
@@ -91,15 +90,31 @@ impl TonicNamedPipeServer {
             });
 
             stream! {
-                let mut server = ServerOptions::new()
+                let server_result = ServerOptions::new()
                     .first_pipe_instance(true)
                     .create_with_security_attributes_raw(
                         &name,
                         addr_of_mut!(security_attributes) as *mut c_void
-                    )?;
+                    );
+
+                let mut server = match server_result {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("[Pipe] Error creating pipe: {:?}", e);
+                        yield Err(e);
+                        return;
+                    }
+                };
 
                 loop {
-                    server.connect().await?;
+                    match server.connect().await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("[Pipe] Connection error: {:?}", e);
+                            yield Err(e);
+                            return;
+                        }
+                    }
 
                     let client = TonicNamedPipeServer {
                         inner: server,
@@ -107,11 +122,20 @@ impl TonicNamedPipeServer {
 
                     yield Ok(client);
 
-                    server = ServerOptions::new()
+                    let next_server_result = ServerOptions::new()
                         .create_with_security_attributes_raw(
                             &name,
                             addr_of_mut!(security_attributes) as *mut c_void
-                        )?;
+                        );
+
+                    server = match next_server_result {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("[Pipe] Error creating next pipe: {:?}", e);
+                            yield Err(e);
+                            return;
+                        }
+                    };
                 }
             }
         }

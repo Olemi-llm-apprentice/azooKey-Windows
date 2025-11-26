@@ -274,13 +274,12 @@ mod tests {
         };
 
         let (x, y) = calculate_candidate_position(
-            500,  // caret_top
-            500,  // caret_left
-            520,  // caret_bottom
-            200,  // window_width
-            150,  // window_height
-            &work_area,
-            1.0,  // dpi_scale
+            500, // caret_top
+            500, // caret_left
+            520, // caret_bottom
+            200, // window_width
+            150, // window_height
+            &work_area, 1.0, // dpi_scale
         );
 
         // x = caret_left - offset_x = 500 - 15 = 485
@@ -307,8 +306,7 @@ mod tests {
             1020, // caret_bottom
             200,  // window_width
             150,  // window_height
-            &work_area,
-            1.0,  // dpi_scale
+            &work_area, 1.0, // dpi_scale
         );
 
         // y + window_height > work_area.bottom の場合
@@ -334,8 +332,7 @@ mod tests {
             520,  // caret_bottom
             200,  // window_width
             150,  // window_height
-            &work_area,
-            1.0,  // dpi_scale
+            &work_area, 1.0, // dpi_scale
         );
 
         // x + window_width > work_area.right の場合
@@ -361,8 +358,7 @@ mod tests {
             520, // caret_bottom
             200, // window_width
             150, // window_height
-            &work_area,
-            1.0, // dpi_scale
+            &work_area, 1.0, // dpi_scale
         );
 
         // x < work_area.left の場合
@@ -388,8 +384,7 @@ mod tests {
             520, // caret_bottom
             200, // window_width
             150, // window_height
-            &work_area,
-            1.5, // dpi_scale (150%)
+            &work_area, 1.5, // dpi_scale (150%)
         );
 
         // offset_x = 15 * 1.5 = 22 (切り捨て)
@@ -418,8 +413,7 @@ mod tests {
             1050, // caret_bottom (下端にあふれる)
             200,  // window_width
             150,  // window_height
-            &work_area,
-            1.0,  // dpi_scale
+            &work_area, 1.0, // dpi_scale
         );
 
         // 下にあふれるので上に表示しようとするが、上端より小さくなる場合

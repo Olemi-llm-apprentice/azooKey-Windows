@@ -261,13 +261,25 @@ impl KeybindingsConfig {
         if self.convert_katakana.iter().any(|kb| kb.matches(key_code)) {
             return Some(KeyAction::ConvertKatakana);
         }
-        if self.convert_half_katakana.iter().any(|kb| kb.matches(key_code)) {
+        if self
+            .convert_half_katakana
+            .iter()
+            .any(|kb| kb.matches(key_code))
+        {
             return Some(KeyAction::ConvertHalfKatakana);
         }
-        if self.convert_full_latin.iter().any(|kb| kb.matches(key_code)) {
+        if self
+            .convert_full_latin
+            .iter()
+            .any(|kb| kb.matches(key_code))
+        {
             return Some(KeyAction::ConvertFullLatin);
         }
-        if self.convert_half_latin.iter().any(|kb| kb.matches(key_code)) {
+        if self
+            .convert_half_latin
+            .iter()
+            .any(|kb| kb.matches(key_code))
+        {
             return Some(KeyAction::ConvertHalfLatin);
         }
         None
@@ -382,7 +394,9 @@ pub struct UserDictionary {
 const USER_DICT_FILENAME: &str = "user_dict.txt";
 
 fn get_user_dict_path() -> PathBuf {
-    get_config_root().join("user_dictionary").join(USER_DICT_FILENAME)
+    get_config_root()
+        .join("user_dictionary")
+        .join(USER_DICT_FILENAME)
 }
 
 impl UserDictionary {
@@ -391,19 +405,19 @@ impl UserDictionary {
         if !dict_path.exists() {
             return UserDictionary::default();
         }
-        
+
         let content = match std::fs::read_to_string(&dict_path) {
             Ok(c) => c,
             Err(_) => return UserDictionary::default(),
         };
-        
+
         let mut entries = Vec::new();
         for line in content.lines() {
             // コメント行をスキップ
             if line.starts_with('#') || line.trim().is_empty() {
                 continue;
             }
-            
+
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() >= 2 {
                 entries.push(UserDictEntry {
@@ -413,30 +427,33 @@ impl UserDictionary {
                 });
             }
         }
-        
+
         UserDictionary { entries }
     }
-    
+
     pub fn save(&self) -> Result<(), String> {
         let dict_path = get_user_dict_path();
-        
+
         // ディレクトリが存在しない場合は作成
         if let Some(parent) = dict_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        
+
         let mut content = String::from("# ユーザー辞書ファイル\n# 読み<TAB>単語<TAB>品詞\n");
         for entry in &self.entries {
-            content.push_str(&format!("{}\t{}\t{}\n", entry.reading, entry.word, entry.part_of_speech));
+            content.push_str(&format!(
+                "{}\t{}\t{}\n",
+                entry.reading, entry.word, entry.part_of_speech
+            ));
         }
-        
+
         std::fs::write(&dict_path, content).map_err(|e| e.to_string())
     }
-    
+
     pub fn add_entry(&mut self, entry: UserDictEntry) {
         self.entries.push(entry);
     }
-    
+
     pub fn remove_entry(&mut self, index: usize) -> Result<(), String> {
         if index >= self.entries.len() {
             return Err("Invalid index".to_string());
@@ -444,7 +461,7 @@ impl UserDictionary {
         self.entries.remove(index);
         Ok(())
     }
-    
+
     pub fn update_entry(&mut self, index: usize, entry: UserDictEntry) -> Result<(), String> {
         if index >= self.entries.len() {
             return Err("Invalid index".to_string());
@@ -464,18 +481,18 @@ mod tests {
         if !path.exists() {
             return UserDictionary::default();
         }
-        
+
         let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
             Err(_) => return UserDictionary::default(),
         };
-        
+
         let mut entries = Vec::new();
         for line in content.lines() {
             if line.starts_with('#') || line.trim().is_empty() {
                 continue;
             }
-            
+
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() >= 2 {
                 entries.push(UserDictEntry {
@@ -485,7 +502,7 @@ mod tests {
                 });
             }
         }
-        
+
         UserDictionary { entries }
     }
 
@@ -493,12 +510,15 @@ mod tests {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        
+
         let mut content = String::from("# ユーザー辞書ファイル\n# 読み<TAB>単語<TAB>品詞\n");
         for entry in &dict.entries {
-            content.push_str(&format!("{}\t{}\t{}\n", entry.reading, entry.word, entry.part_of_speech));
+            content.push_str(&format!(
+                "{}\t{}\t{}\n",
+                entry.reading, entry.word, entry.part_of_speech
+            ));
         }
-        
+
         std::fs::write(path, content).map_err(|e| e.to_string())
     }
 
@@ -511,7 +531,7 @@ mod tests {
         // Given: デフォルト設定を作成
         // When: LearningConfig::default() を呼び出す
         let config = LearningConfig::default();
-        
+
         // Then: enabled は true である
         assert!(config.enabled, "デフォルトでは学習が有効であるべき");
     }
@@ -521,7 +541,7 @@ mod tests {
         // Given: デフォルト設定を作成
         // When: AppConfig::default() を呼び出す
         let config = AppConfig::default();
-        
+
         // Then: 各フィールドがデフォルト値である
         assert_eq!(config.version, "0.0.2");
         assert!(config.learning.enabled);
@@ -531,14 +551,20 @@ mod tests {
         assert_eq!(config.zenzai.backend, "cpu");
         // いい感じ変換のデフォルト値
         assert!(!config.iikanji.enabled);
-        assert_eq!(config.iikanji.provider, "zenzai", "デフォルトはZenzai（ローカル）");
+        assert_eq!(
+            config.iikanji.provider, "zenzai",
+            "デフォルトはZenzai（ローカル）"
+        );
         assert_eq!(config.iikanji.openai.api_key, "");
         assert_eq!(config.iikanji.openai.model, "gpt-5-mini");
         assert_eq!(config.iikanji.openai.max_tokens, 256);
         assert!((config.iikanji.openai.temperature - 0.7).abs() < 0.01);
         // キーバインドのデフォルト値
         assert_eq!(config.keybindings.toggle_input_mode.len(), 1);
-        assert_eq!(config.keybindings.toggle_input_mode[0].key, "Zenkaku/Hankaku");
+        assert_eq!(
+            config.keybindings.toggle_input_mode[0].key,
+            "Zenkaku/Hankaku"
+        );
     }
 
     #[test]
@@ -546,7 +572,7 @@ mod tests {
         // Given: デフォルト設定を作成
         // When: PredictionConfig::default() を呼び出す
         let config = PredictionConfig::default();
-        
+
         // Then: enabled は true である
         assert!(config.enabled, "デフォルトでは予測変換が有効であるべき");
     }
@@ -556,7 +582,7 @@ mod tests {
         // Given: 予測変換を無効化した設定
         // When: PredictionConfig を作成して enabled を false に設定
         let config = PredictionConfig { enabled: false };
-        
+
         // Then: enabled は false である
         assert!(!config.enabled, "予測変換が無効化されているべき");
     }
@@ -565,11 +591,11 @@ mod tests {
     fn tc_p_02_prediction_config_serialize_deserialize() {
         // Given: 予測変換設定
         let config = PredictionConfig { enabled: true };
-        
+
         // When: JSON にシリアライズしてデシリアライズ
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: PredictionConfig = serde_json::from_str(&json).unwrap();
-        
+
         // Then: 元の値と一致する
         assert_eq!(config.enabled, deserialized.enabled);
     }
@@ -578,13 +604,19 @@ mod tests {
     fn tc_p_03_app_config_with_prediction_serialize() {
         // Given: AppConfig全体
         let config = AppConfig::default();
-        
+
         // When: JSON にシリアライズ
         let json = serde_json::to_string(&config).unwrap();
-        
+
         // Then: prediction フィールドが含まれる
-        assert!(json.contains("\"prediction\""), "JSONにpredictionフィールドが含まれるべき");
-        assert!(json.contains("\"enabled\":true"), "prediction.enabledがtrueであるべき");
+        assert!(
+            json.contains("\"prediction\""),
+            "JSONにpredictionフィールドが含まれるべき"
+        );
+        assert!(
+            json.contains("\"enabled\":true"),
+            "prediction.enabledがtrueであるべき"
+        );
     }
 
     // ==========================================
@@ -596,7 +628,7 @@ mod tests {
         // Given: デフォルト設定を作成
         // When: IikanjiConfig::default() を呼び出す
         let config = IikanjiConfig::default();
-        
+
         // Then: デフォルト値が設定されている
         assert!(!config.enabled, "デフォルトではいい感じ変換は無効");
         assert_eq!(config.provider, "zenzai", "デフォルトはZenzai（ローカル）");
@@ -620,7 +652,7 @@ mod tests {
                 temperature: 0.5,
             },
         };
-        
+
         // Then: 設定値が正しい
         assert!(config.enabled);
         assert_eq!(config.provider, "openai");
@@ -642,11 +674,11 @@ mod tests {
                 temperature: 0.7,
             },
         };
-        
+
         // When: JSON にシリアライズしてデシリアライズ
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: IikanjiConfig = serde_json::from_str(&json).unwrap();
-        
+
         // Then: 元の値と一致する
         assert_eq!(config.enabled, deserialized.enabled);
         assert_eq!(config.provider, deserialized.provider);
@@ -662,12 +694,15 @@ mod tests {
         config.iikanji.enabled = true;
         config.iikanji.provider = "openai".to_string();
         config.iikanji.openai.api_key = "sk-test-key".to_string();
-        
+
         // When: JSON にシリアライズ
         let json = serde_json::to_string(&config).unwrap();
-        
+
         // Then: iikanji フィールドが含まれる
-        assert!(json.contains("\"iikanji\""), "JSONにiikanjiフィールドが含まれるべき");
+        assert!(
+            json.contains("\"iikanji\""),
+            "JSONにiikanjiフィールドが含まれるべき"
+        );
         assert!(json.contains("\"openai\""), "OpenAI設定が含まれるべき");
     }
 
@@ -675,29 +710,47 @@ mod tests {
     fn tc_ik_05_iikanji_config_deserialize_with_default_openai() {
         // Given: openaiが省略されたJSON（Zenzai使用時）
         let json = r#"{"enabled":true,"provider":"zenzai"}"#;
-        
+
         // When: デシリアライズ
         let config: IikanjiConfig = serde_json::from_str(json).unwrap();
-        
+
         // Then: openaiはデフォルト値
         assert_eq!(config.openai.api_key, "");
         assert_eq!(config.openai.model, "gpt-5-mini");
     }
-    
+
     #[test]
     fn tc_ik_06_openai_models_list() {
         // Given: OPENAI_MODELS定数
         // When: モデルリストを確認
         // Then: 最新のGPT-5シリーズが含まれている
-        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5.1"), "gpt-5.1が含まれるべき");
-        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5"), "gpt-5が含まれるべき");
-        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5-mini"), "gpt-5-miniが含まれるべき");
-        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5-nano"), "gpt-5-nanoが含まれるべき");
-        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-4.1"), "gpt-4.1が含まれるべき");
+        assert!(
+            OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5.1"),
+            "gpt-5.1が含まれるべき"
+        );
+        assert!(
+            OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5"),
+            "gpt-5が含まれるべき"
+        );
+        assert!(
+            OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5-mini"),
+            "gpt-5-miniが含まれるべき"
+        );
+        assert!(
+            OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5-nano"),
+            "gpt-5-nanoが含まれるべき"
+        );
+        assert!(
+            OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-4.1"),
+            "gpt-4.1が含まれるべき"
+        );
         // レガシーモデルも確認
-        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-4o"), "gpt-4oが含まれるべき");
+        assert!(
+            OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-4o"),
+            "gpt-4oが含まれるべき"
+        );
     }
-    
+
     #[test]
     fn tc_ik_07_provider_zenzai() {
         // Given: Zenzaiプロバイダーを使用する設定
@@ -706,7 +759,7 @@ mod tests {
             provider: "zenzai".to_string(),
             openai: OpenAIConfig::default(),
         };
-        
+
         // Then: プロバイダーがzenzai
         assert_eq!(config.provider, "zenzai");
         // OpenAI設定は使われないがデフォルト値を持つ
@@ -722,7 +775,7 @@ mod tests {
         // Given: デフォルト設定を作成
         // When: KeybindingsConfig::default() を呼び出す
         let config = KeybindingsConfig::default();
-        
+
         // Then: デフォルトのキーバインドが設定されている
         assert_eq!(config.toggle_input_mode.len(), 1);
         assert_eq!(config.toggle_input_mode[0].key, "Zenkaku/Hankaku");
@@ -763,7 +816,7 @@ mod tests {
     fn tc_kb_04_keybinding_matches() {
         // Given: F13キーバインド
         let kb = KeyBinding::new("F13");
-        
+
         // When/Then: F13キーコード(0x7C)にマッチする
         assert!(kb.matches(0x7C));
         assert!(!kb.matches(0x7D)); // F14にはマッチしない
@@ -775,7 +828,7 @@ mod tests {
         let mut config = KeybindingsConfig::default();
         config.toggle_input_mode.push(KeyBinding::new("F13"));
         config.set_kana_mode.push(KeyBinding::new("F14"));
-        
+
         // When/Then: 各キーに対応するアクションが返される
         assert_eq!(config.get_action(0x7C), Some(KeyAction::ToggleInputMode)); // F13
         assert_eq!(config.get_action(0x7D), Some(KeyAction::SetKanaMode)); // F14
@@ -788,13 +841,16 @@ mod tests {
         // Given: キーバインド設定
         let mut config = KeybindingsConfig::default();
         config.toggle_input_mode.push(KeyBinding::new("F13"));
-        
+
         // When: JSON にシリアライズしてデシリアライズ
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: KeybindingsConfig = serde_json::from_str(&json).unwrap();
-        
+
         // Then: 元の値と一致する
-        assert_eq!(config.toggle_input_mode.len(), deserialized.toggle_input_mode.len());
+        assert_eq!(
+            config.toggle_input_mode.len(),
+            deserialized.toggle_input_mode.len()
+        );
         assert_eq!(deserialized.toggle_input_mode[1].key, "F13");
     }
 
@@ -804,7 +860,7 @@ mod tests {
         let mut config = KeybindingsConfig::default();
         config.toggle_input_mode.push(KeyBinding::new("F13"));
         config.toggle_input_mode.push(KeyBinding::new("F14"));
-        
+
         // When/Then: どちらのキーでもToggleInputModeが返される
         assert_eq!(config.get_action(0xF3), Some(KeyAction::ToggleInputMode)); // Zenkaku/Hankaku
         assert_eq!(config.get_action(0x7C), Some(KeyAction::ToggleInputMode)); // F13
@@ -820,13 +876,13 @@ mod tests {
         // Given: 有効なTSVファイルが存在
         let temp_dir = TempDir::new().unwrap();
         let dict_path = temp_dir.path().join("user_dict.txt");
-        
+
         let content = "あずーきー\tazooKey\t固有名詞\nてすと\tテスト\t名詞\n";
         std::fs::write(&dict_path, content).unwrap();
-        
+
         // When: 辞書を読み込む
         let dict = load_from_path(&dict_path);
-        
+
         // Then: 正しくエントリが読み込まれる
         assert_eq!(dict.entries.len(), 2);
         assert_eq!(dict.entries[0].reading, "あずーきー");
@@ -839,13 +895,13 @@ mod tests {
         // Given: 3列のTSVエントリ
         let temp_dir = TempDir::new().unwrap();
         let dict_path = temp_dir.path().join("user_dict.txt");
-        
+
         let content = "よみ\t単語\t品詞名\n";
         std::fs::write(&dict_path, content).unwrap();
-        
+
         // When: 辞書を読み込む
         let dict = load_from_path(&dict_path);
-        
+
         // Then: reading, word, part_of_speechが設定される
         assert_eq!(dict.entries.len(), 1);
         assert_eq!(dict.entries[0].reading, "よみ");
@@ -858,13 +914,13 @@ mod tests {
         // Given: 2列のTSVエントリ
         let temp_dir = TempDir::new().unwrap();
         let dict_path = temp_dir.path().join("user_dict.txt");
-        
+
         let content = "よみ\t単語\n";
         std::fs::write(&dict_path, content).unwrap();
-        
+
         // When: 辞書を読み込む
         let dict = load_from_path(&dict_path);
-        
+
         // Then: part_of_speechは「その他」になる
         assert_eq!(dict.entries.len(), 1);
         assert_eq!(dict.entries[0].part_of_speech, "その他");
@@ -874,14 +930,14 @@ mod tests {
     fn tc_n_04_add_entry() {
         // Given: 空の辞書
         let mut dict = UserDictionary::default();
-        
+
         // When: エントリを追加
         dict.add_entry(UserDictEntry {
             reading: "てすと".to_string(),
             word: "テスト".to_string(),
             part_of_speech: "名詞".to_string(),
         });
-        
+
         // Then: entriesに追加される
         assert_eq!(dict.entries.len(), 1);
         assert_eq!(dict.entries[0].reading, "てすと");
@@ -901,10 +957,10 @@ mod tests {
             word: "二".to_string(),
             part_of_speech: "数詞".to_string(),
         });
-        
+
         // When: index 0を削除
         let result = dict.remove_entry(0);
-        
+
         // Then: 指定indexのエントリが削除される
         assert!(result.is_ok());
         assert_eq!(dict.entries.len(), 1);
@@ -920,14 +976,17 @@ mod tests {
             word: "古い".to_string(),
             part_of_speech: "形容詞".to_string(),
         });
-        
+
         // When: index 0を更新
-        let result = dict.update_entry(0, UserDictEntry {
-            reading: "あたらしい".to_string(),
-            word: "新しい".to_string(),
-            part_of_speech: "形容詞".to_string(),
-        });
-        
+        let result = dict.update_entry(
+            0,
+            UserDictEntry {
+                reading: "あたらしい".to_string(),
+                word: "新しい".to_string(),
+                part_of_speech: "形容詞".to_string(),
+            },
+        );
+
         // Then: 指定indexのエントリが更新される
         assert!(result.is_ok());
         assert_eq!(dict.entries[0].reading, "あたらしい");
@@ -939,17 +998,17 @@ mod tests {
         // Given: エントリを持つ辞書
         let temp_dir = TempDir::new().unwrap();
         let dict_path = temp_dir.path().join("user_dict.txt");
-        
+
         let mut dict = UserDictionary::default();
         dict.add_entry(UserDictEntry {
             reading: "ほぞん".to_string(),
             word: "保存".to_string(),
             part_of_speech: "名詞".to_string(),
         });
-        
+
         // When: 保存する
         let result = save_to_path(&dict, &dict_path);
-        
+
         // Then: TSV形式で保存される
         assert!(result.is_ok());
         let content = std::fs::read_to_string(&dict_path).unwrap();
@@ -965,10 +1024,10 @@ mod tests {
         // Given: 辞書ファイルが存在しない
         let temp_dir = TempDir::new().unwrap();
         let dict_path = temp_dir.path().join("nonexistent.txt");
-        
+
         // When: 辞書を読み込む
         let dict = load_from_path(&dict_path);
-        
+
         // Then: 空のUserDictionaryを返す
         assert!(dict.entries.is_empty());
     }
@@ -979,10 +1038,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let dict_path = temp_dir.path().join("user_dict.txt");
         std::fs::write(&dict_path, "").unwrap();
-        
+
         // When: 辞書を読み込む
         let dict = load_from_path(&dict_path);
-        
+
         // Then: 空のUserDictionaryを返す
         assert!(dict.entries.is_empty());
     }
@@ -994,10 +1053,10 @@ mod tests {
         let dict_path = temp_dir.path().join("user_dict.txt");
         let content = "# これはコメント\n# これもコメント\n\n";
         std::fs::write(&dict_path, content).unwrap();
-        
+
         // When: 辞書を読み込む
         let dict = load_from_path(&dict_path);
-        
+
         // Then: 空のUserDictionaryを返す
         assert!(dict.entries.is_empty());
     }
@@ -1011,10 +1070,10 @@ mod tests {
             word: "テスト".to_string(),
             part_of_speech: "名詞".to_string(),
         });
-        
+
         // When: 無効なindex（範囲外）で削除
         let result = dict.remove_entry(5);
-        
+
         // Then: Err("Invalid index")
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid index");
@@ -1029,14 +1088,17 @@ mod tests {
             word: "テスト".to_string(),
             part_of_speech: "名詞".to_string(),
         });
-        
+
         // When: 無効なindex（範囲外）で更新
-        let result = dict.update_entry(10, UserDictEntry {
-            reading: "あたらしい".to_string(),
-            word: "新しい".to_string(),
-            part_of_speech: "名詞".to_string(),
-        });
-        
+        let result = dict.update_entry(
+            10,
+            UserDictEntry {
+                reading: "あたらしい".to_string(),
+                word: "新しい".to_string(),
+                part_of_speech: "名詞".to_string(),
+            },
+        );
+
         // Then: Err("Invalid index")
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid index");
@@ -1046,10 +1108,10 @@ mod tests {
     fn tc_a_06_remove_from_empty_dict() {
         // Given: 空のentries配列
         let mut dict = UserDictionary::default();
-        
+
         // When: index 0で削除を試みる
         let result = dict.remove_entry(0);
-        
+
         // Then: Err("Invalid index")
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid index");
@@ -1064,13 +1126,13 @@ mod tests {
         // Given: コメント、空行、有効なエントリが混在するファイル
         let temp_dir = TempDir::new().unwrap();
         let dict_path = temp_dir.path().join("user_dict.txt");
-        
+
         let content = "# ヘッダーコメント\n\nあいう\t愛羽\t固有名詞\n# 中間コメント\nかきく\t柿食う\t動詞\n\n";
         std::fs::write(&dict_path, content).unwrap();
-        
+
         // When: 辞書を読み込む
         let dict = load_from_path(&dict_path);
-        
+
         // Then: 有効なエントリのみ読み込まれる
         assert_eq!(dict.entries.len(), 2);
     }
@@ -1079,7 +1141,7 @@ mod tests {
     fn tc_n_09_multiple_add_and_remove() {
         // Given: 空の辞書
         let mut dict = UserDictionary::default();
-        
+
         // When: 3つ追加して1つ削除
         dict.add_entry(UserDictEntry {
             reading: "いち".to_string(),
@@ -1097,7 +1159,7 @@ mod tests {
             part_of_speech: "数詞".to_string(),
         });
         let _ = dict.remove_entry(1);
-        
+
         // Then: 2つのエントリが残り、順序が正しい
         assert_eq!(dict.entries.len(), 2);
         assert_eq!(dict.entries[0].reading, "いち");
@@ -1109,7 +1171,7 @@ mod tests {
         // Given: エントリを持つ辞書を保存
         let temp_dir = TempDir::new().unwrap();
         let dict_path = temp_dir.path().join("user_dict.txt");
-        
+
         let mut dict = UserDictionary::default();
         dict.add_entry(UserDictEntry {
             reading: "てすと".to_string(),
@@ -1117,10 +1179,10 @@ mod tests {
             part_of_speech: "名詞".to_string(),
         });
         save_to_path(&dict, &dict_path).unwrap();
-        
+
         // When: 再度読み込む
         let reloaded = load_from_path(&dict_path);
-        
+
         // Then: 同じ内容が読み込まれる
         assert_eq!(reloaded.entries.len(), 1);
         assert_eq!(reloaded.entries[0].reading, "てすと");

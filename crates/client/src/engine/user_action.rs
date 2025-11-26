@@ -39,7 +39,10 @@ pub enum Function {
 
 impl UserAction {
     /// 設定からキーバインドを参照してアクションを決定
-    pub fn from_key_code_with_config(key_code: usize, keybindings: &KeybindingsConfig) -> Result<UserAction> {
+    pub fn from_key_code_with_config(
+        key_code: usize,
+        keybindings: &KeybindingsConfig,
+    ) -> Result<UserAction> {
         // まずカスタムキーバインドをチェック
         if let Some(key_action) = keybindings.get_action(key_code as u32) {
             return Ok(match key_action {

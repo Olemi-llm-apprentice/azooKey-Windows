@@ -49,7 +49,7 @@ pub struct Composition {
 
     pub state: CompositionState,
     pub tip_composition: Option<ITfComposition>,
-    
+
     // いい感じ変換用: 直前に確定したテキストを保持
     pub last_committed_text: String,
     // いい感じ変換モード中かどうか
@@ -410,7 +410,7 @@ impl TextServiceFactory {
                     } else {
                         String::new()
                     };
-                    
+
                     self.end_composition()?;
                     selection_index = 0;
                     corresponding_count = 0;
@@ -421,7 +421,7 @@ impl TextServiceFactory {
                     ipc_service.hide_window()?;
                     ipc_service.set_candidates(vec![])?;
                     ipc_service.clear_text()?;
-                    
+
                     // コンテキストを保存（次のいい感じ変換で使用）
                     if !committed_text.is_empty() {
                         let text_service = self.borrow()?;
@@ -458,9 +458,11 @@ impl TextServiceFactory {
                                 let comp = text_service.borrow_composition()?;
                                 comp.last_committed_text.clone()
                             };
-                            
+
                             if !last_committed.is_empty() {
-                                if let Ok(Some(iikanji_result)) = ipc_service.request_iikanji(&raw_hiragana, &last_committed) {
+                                if let Ok(Some(iikanji_result)) =
+                                    ipc_service.request_iikanji(&raw_hiragana, &last_committed)
+                                {
                                     // いい感じ変換結果を候補の先頭に追加
                                     final_candidates.insert(0, format!("🤖 {}", iikanji_result));
                                     tracing::info!("Iikanji result: {}", iikanji_result);

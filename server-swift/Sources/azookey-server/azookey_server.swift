@@ -1,26 +1,170 @@
 import KanaKanjiConverterModule
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import ffi
 
-@MainActor let converter = KanaKanjiConverter()
-@MainActor var composingText = ComposingText()
-
-@MainActor var execURL = URL(filePath: "")
-@MainActor var config: [String : Any] = [
-    "enable": false,
-    "profile": "",
-    "learningEnabled": true,
-    "predictionEnabled": true,
-    "shouldResetMemory": false,
-    // いい感じ変換設定
-    "iikanjiEnabled": false,
-    "iikanjiProvider": "zenzai", // "zenzai" または "openai"
-    // OpenAI設定
-    "openaiApiKey": "",
-    "openaiModel": "gpt-4o-mini",
-    "openaiMaxTokens": 256,
-    "openaiTemperature": 0.7,
-]
+// スレッドセーフなIME状態管理
+// @MainActorの代わりにDispatchQueueを使用してスレッドセーフにする
+final class IMEState: @unchecked Sendable {
+    static let shared = IMEState()
+    
+    private let queue = DispatchQueue(label: "com.azookey.ime", qos: .userInteractive)
+    
+    private var _converter: KanaKanjiConverter
+    private var _composingText: ComposingText
+    private var _execURL: URL
+    private var _config: [String: Any]
+    private var _iikanjiResult: String?
+    private var _iikanjiError: String?
+    private var _memoryURL: URL
+    private var _userDictionaryURL: URL
+    
+    private init() {
+        _converter = KanaKanjiConverter()
+        _composingText = ComposingText()
+        _execURL = URL(filePath: "")
+        _config = [
+            "enable": false,
+            "profile": "",
+            "learningEnabled": true,
+            "predictionEnabled": true,
+            "shouldResetMemory": false,
+            "iikanjiEnabled": false,
+            "iikanjiProvider": "zenzai",
+            "openaiApiKey": "",
+            "openaiModel": "gpt-4o-mini",
+            "openaiMaxTokens": 256,
+            "openaiTemperature": 0.7,
+        ]
+        _iikanjiResult = nil
+        _iikanjiError = nil
+        
+        // 学習データの保存先ディレクトリ
+        if let appDataPath = ProcessInfo.processInfo.environment["APPDATA"] {
+            _memoryURL = URL(filePath: appDataPath).appendingPathComponent("Azookey/memory")
+            try? FileManager.default.createDirectory(at: _memoryURL, withIntermediateDirectories: true)
+        } else {
+            _memoryURL = URL(filePath: "./memory")
+        }
+        
+        // ユーザー辞書の保存先ディレクトリ
+        if let appDataPath = ProcessInfo.processInfo.environment["APPDATA"] {
+            _userDictionaryURL = URL(filePath: appDataPath).appendingPathComponent("Azookey/user_dictionary")
+            try? FileManager.default.createDirectory(at: _userDictionaryURL, withIntermediateDirectories: true)
+        } else {
+            _userDictionaryURL = URL(filePath: "./user_dictionary")
+        }
+    }
+    
+    // スレッドセーフにブロックを実行
+    func sync<T>(_ block: () throws -> T) rethrows -> T {
+        return try queue.sync { try block() }
+    }
+    
+    // アクセサ
+    var converter: KanaKanjiConverter {
+        get { queue.sync { _converter } }
+    }
+    
+    var composingText: ComposingText {
+        get { queue.sync { _composingText } }
+        set { queue.sync { _composingText = newValue } }
+    }
+    
+    func modifyComposingText(_ block: (inout ComposingText) -> Void) {
+        queue.sync { block(&_composingText) }
+    }
+    
+    var execURL: URL {
+        get { queue.sync { _execURL } }
+        set { queue.sync { _execURL = newValue } }
+    }
+    
+    var config: [String: Any] {
+        get { queue.sync { _config } }
+        set { queue.sync { _config = newValue } }
+    }
+    
+    func getConfigValue<T>(_ key: String, default defaultValue: T) -> T {
+        return queue.sync { (_config[key] as? T) ?? defaultValue }
+    }
+    
+    func setConfigValue(_ key: String, _ value: Any) {
+        queue.sync { _config[key] = value }
+    }
+    
+    var iikanjiResult: String? {
+        get { queue.sync { _iikanjiResult } }
+        set { queue.sync { _iikanjiResult = newValue } }
+    }
+    
+    var iikanjiError: String? {
+        get { queue.sync { _iikanjiError } }
+        set { queue.sync { _iikanjiError = newValue } }
+    }
+    
+    var memoryURL: URL {
+        get { queue.sync { _memoryURL } }
+    }
+    
+    var userDictionaryURL: URL {
+        get { queue.sync { _userDictionaryURL } }
+    }
+    
+    // converter.requestCandidatesをスレッドセーフに実行
+    func requestCandidates(_ composingText: ComposingText, options: ConvertRequestOptions) -> ConvertRequestOptions.ReturningResultType {
+        return queue.sync {
+            return _converter.requestCandidates(composingText, options: options)
+        }
+    }
+    
+    // IME状態を使った操作をスレッドセーフに実行
+    func getOptions(context: String = "") -> ConvertRequestOptions {
+        return queue.sync {
+            let learningEnabled = (_config["learningEnabled"] as? Bool) ?? true
+            let predictionEnabled = (_config["predictionEnabled"] as? Bool) ?? true
+            let shouldReset = (_config["shouldResetMemory"] as? Bool) ?? false
+            
+            if shouldReset {
+                _config["shouldResetMemory"] = false
+            }
+            
+            let zenzaiEnabled = (_config["enable"] as? Bool) ?? false
+            let profile = (_config["profile"] as? String) ?? ""
+            
+            return ConvertRequestOptions(
+                requireJapanesePrediction: predictionEnabled,
+                requireEnglishPrediction: false,
+                keyboardLanguage: .ja_JP,
+                learningType: learningEnabled ? .inputAndOutput : .nothing,
+                maxMemoryCount: 65536,
+                shouldResetMemory: shouldReset,
+                dictionaryResourceURL: _execURL.appendingPathComponent("Dictionary"),
+                memoryDirectoryURL: _memoryURL,
+                sharedContainerURL: _userDictionaryURL,
+                textReplacer: .init {
+                    return self._execURL.appendingPathComponent("EmojiDictionary").appendingPathComponent("emoji_all_E15.1.txt")
+                },
+                zenzaiMode: zenzaiEnabled ? .on(
+                    weight: _execURL.appendingPathComponent("zenz.gguf"),
+                    inferenceLimit: 1,
+                    requestRichCandidates: true,
+                    personalizationMode: nil,
+                    versionDependentMode: .v3(
+                        .init(
+                            profile: profile,
+                            leftSideContext: context
+                        )
+                    )
+                ) : .off,
+                preloadDictionary: true,
+                metadata: .init(versionString: "Azookey for Windows")
+            )
+        }
+    }
+}
 
 // いい感じ変換キーワード定義
 enum IikanjiKeyword: String, CaseIterable {
@@ -32,7 +176,6 @@ enum IikanjiKeyword: String, CaseIterable {
     case tamego = "ためご"
     case kousei = "こうせい"
     
-    // カタカナバリアント
     var katakanaVariant: String {
         switch self {
         case .eigo: return "エイゴ"
@@ -45,7 +188,6 @@ enum IikanjiKeyword: String, CaseIterable {
         }
     }
     
-    /// OpenAI用プロンプト
     var prompt: String {
         switch self {
         case .eigo:
@@ -65,7 +207,6 @@ enum IikanjiKeyword: String, CaseIterable {
         }
     }
     
-    /// Zenzai用プロンプト（日本語で指示）
     var zenzaiPrompt: String {
         switch self {
         case .eigo:
@@ -96,88 +237,7 @@ enum IikanjiKeyword: String, CaseIterable {
     }
 }
 
-// いい感じ変換結果を保持
-@MainActor var iikanjiResult: String? = nil
-@MainActor var iikanjiError: String? = nil
-
-// 学習データの保存先ディレクトリ
-@MainActor var memoryURL: URL = {
-    if let appDataPath = ProcessInfo.processInfo.environment["APPDATA"] {
-        let url = URL(filePath: appDataPath).appendingPathComponent("Azookey/memory")
-        // ディレクトリが存在しない場合は作成
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-    return URL(filePath: "./memory")
-}()
-
-// ユーザー辞書の保存先ディレクトリ
-@MainActor var userDictionaryURL: URL = {
-    if let appDataPath = ProcessInfo.processInfo.environment["APPDATA"] {
-        let url = URL(filePath: appDataPath).appendingPathComponent("Azookey/user_dictionary")
-        // ディレクトリが存在しない場合は作成
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-    return URL(filePath: "./user_dictionary")
-}()
-
-@MainActor func getOptions(context: String = "") -> ConvertRequestOptions {
-    let learningEnabled = (config["learningEnabled"] as? Bool) ?? true
-    let predictionEnabled = (config["predictionEnabled"] as? Bool) ?? true
-    let shouldReset = (config["shouldResetMemory"] as? Bool) ?? false
-    
-    // リセットフラグが立っていたらクリア
-    if shouldReset {
-        config["shouldResetMemory"] = false
-    }
-    
-    return ConvertRequestOptions(
-        requireJapanesePrediction: predictionEnabled,
-        requireEnglishPrediction: false,
-        keyboardLanguage: .ja_JP,
-        learningType: learningEnabled ? .inputAndOutput : .nothing,
-        maxMemoryCount: 65536,
-        shouldResetMemory: shouldReset,
-        dictionaryResourceURL: execURL.appendingPathComponent("Dictionary"),
-        memoryDirectoryURL: memoryURL,
-        sharedContainerURL: userDictionaryURL,
-        textReplacer: .init {
-            return execURL.appendingPathComponent("EmojiDictionary").appendingPathComponent("emoji_all_E15.1.txt")
-        },
-        // zenzai
-        zenzaiMode: config["enable"] as! Bool ? .on(
-            weight: execURL.appendingPathComponent("zenz.gguf"),
-            inferenceLimit: 1,
-            requestRichCandidates: true,
-            personalizationMode: nil,
-            versionDependentMode: .v3(
-                .init(
-                    profile: config["profile"] as! String,
-                    leftSideContext: context
-                )
-            )
-        ) : .off,
-        preloadDictionary: true,
-        metadata: .init(versionString: "Azookey for Windows")
-    )
-}
-
-class SimpleComposingText {
-    init(text: String, cursor: Int) {
-        self.text = UnsafeMutablePointer<CChar>(mutating: text.utf8String)!
-        self.cursor = cursor
-    }
-
-    var text: UnsafeMutablePointer<CChar>
-    var cursor: Int
-}
-
-struct SComposingText {
-    var text: UnsafeMutablePointer<CChar>
-    var cursor: Int
-}
-
+// ヘルパー関数
 func constructCandidateString(candidate: Candidate, hiragana: String) -> String {
     var remainingHiragana = hiragana
     var result = ""
@@ -194,60 +254,67 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
     return result
 }
 
+func to_list_pointer(_ list: [FFICandidate]) -> UnsafeMutablePointer<UnsafeMutablePointer<FFICandidate>?> {
+    let pointer = UnsafeMutablePointer<UnsafeMutablePointer<FFICandidate>?>.allocate(capacity: max(list.count, 1))
+    for (i, item) in list.enumerated() {
+        pointer[i] = UnsafeMutablePointer<FFICandidate>.allocate(capacity: 1)
+        pointer[i]?.pointee = item
+    }
+    return pointer
+}
+
+// FFI関数 - @MainActorを削除してスレッドセーフに
+
 @_silgen_name("LoadConfig")
-@MainActor public func load_config() {
+public func load_config() {
+    let state = IMEState.shared
+    
     if let appDataPath = ProcessInfo.processInfo.environment["APPDATA"] {
         let settingsPath = URL(filePath: appDataPath).appendingPathComponent("Azookey/settings.json")
         
         do {
             let data = try Data(contentsOf: settingsPath)
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                // Zenzai設定の読み込み
                 if let zenzaiDict = json["zenzai"] as? [String: Any] {
                     if let enableValue = zenzaiDict["enable"] as? Bool {
-                        config["enable"] = enableValue
+                        state.setConfigValue("enable", enableValue)
                     }
-                    
                     if let profileValue = zenzaiDict["profile"] as? String {
-                        config["profile"] = profileValue
+                        state.setConfigValue("profile", profileValue)
                     }
                 }
                 
-                // 学習設定の読み込み
                 if let learningDict = json["learning"] as? [String: Any] {
                     if let enabledValue = learningDict["enabled"] as? Bool {
-                        config["learningEnabled"] = enabledValue
+                        state.setConfigValue("learningEnabled", enabledValue)
                     }
                 }
                 
-                // 予測変換設定の読み込み
                 if let predictionDict = json["prediction"] as? [String: Any] {
                     if let enabledValue = predictionDict["enabled"] as? Bool {
-                        config["predictionEnabled"] = enabledValue
+                        state.setConfigValue("predictionEnabled", enabledValue)
                     }
                 }
                 
-                // いい感じ変換設定の読み込み
                 if let iikanjiDict = json["iikanji"] as? [String: Any] {
                     if let enabledValue = iikanjiDict["enabled"] as? Bool {
-                        config["iikanjiEnabled"] = enabledValue
+                        state.setConfigValue("iikanjiEnabled", enabledValue)
                     }
                     if let providerValue = iikanjiDict["provider"] as? String {
-                        config["iikanjiProvider"] = providerValue
+                        state.setConfigValue("iikanjiProvider", providerValue)
                     }
-                    // OpenAI設定
                     if let openaiDict = iikanjiDict["openai"] as? [String: Any] {
                         if let apiKeyValue = openaiDict["api_key"] as? String {
-                            config["openaiApiKey"] = apiKeyValue
+                            state.setConfigValue("openaiApiKey", apiKeyValue)
                         }
                         if let modelValue = openaiDict["model"] as? String {
-                            config["openaiModel"] = modelValue
+                            state.setConfigValue("openaiModel", modelValue)
                         }
                         if let maxTokensValue = openaiDict["max_tokens"] as? Int {
-                            config["openaiMaxTokens"] = maxTokensValue
+                            state.setConfigValue("openaiMaxTokens", maxTokensValue)
                         }
                         if let temperatureValue = openaiDict["temperature"] as? Double {
-                            config["openaiTemperature"] = temperatureValue
+                            state.setConfigValue("openaiTemperature", temperatureValue)
                         }
                     }
                 }
@@ -258,77 +325,259 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
     }
 }
 
-// いい感じ変換を実行（プロバイダーに応じてZenzaiまたはOpenAIを使用）
-@MainActor func requestIikanji(keyword: IikanjiKeyword, context: String) -> String? {
-    let enabled = (config["iikanjiEnabled"] as? Bool) ?? false
+@_silgen_name("Initialize")
+public func initialize(
+    path: UnsafePointer<CChar>,
+    use_zenzai: Bool
+) {
+    let state = IMEState.shared
+    let pathString = String(cString: path)
+    state.execURL = URL(filePath: pathString)
+    
+    load_config()
+    
+    // 初期化のための変換実行
+    state.sync {
+        var tempComposingText = ComposingText()
+        tempComposingText.insertAtCursorPosition("a", inputStyle: .roman2kana)
+        let options = state.getOptions()
+        _ = state.requestCandidates(tempComposingText, options: options)
+    }
+    state.composingText = ComposingText()
+}
+
+@_silgen_name("AppendText")
+public func append_text(
+    input: UnsafePointer<CChar>,
+    cursorPtr: UnsafeMutablePointer<Int>
+) -> UnsafeMutablePointer<CChar> {
+    let state = IMEState.shared
+    let inputString = String(cString: input)
+    
+    return state.sync {
+        var composingText = state.composingText
+        composingText.insertAtCursorPosition(inputString, inputStyle: .roman2kana)
+        state.composingText = composingText
+        
+        cursorPtr.pointee = composingText.convertTargetCursorPosition
+        return _strdup(composingText.convertTarget)!
+    }
+}
+
+@_silgen_name("RemoveText")
+public func remove_text(
+    cursorPtr: UnsafeMutablePointer<Int>
+) -> UnsafeMutablePointer<CChar> {
+    let state = IMEState.shared
+    
+    return state.sync {
+        var composingText = state.composingText
+        composingText.deleteBackwardFromCursorPosition(count: 1)
+        state.composingText = composingText
+        
+        cursorPtr.pointee = composingText.convertTargetCursorPosition
+        return _strdup(composingText.convertTarget)!
+    }
+}
+
+@_silgen_name("MoveCursor")
+public func move_cursor(
+    offset: Int32,
+    cursorPtr: UnsafeMutablePointer<Int>
+) -> UnsafeMutablePointer<CChar> {
+    let state = IMEState.shared
+    
+    return state.sync {
+        var composingText = state.composingText
+        let cursor = composingText.moveCursorFromCursorPosition(count: Int(offset))
+        state.composingText = composingText
+        print("offset: \(offset), cursor: \(cursor)")
+        
+        cursorPtr.pointee = cursor
+        return _strdup(composingText.convertTarget)!
+    }
+}
+
+@_silgen_name("ClearText")
+public func clear_text() {
+    IMEState.shared.composingText = ComposingText()
+}
+
+@_silgen_name("GetComposedText")
+public func get_composed_text(lengthPtr: UnsafeMutablePointer<Int>) -> UnsafeMutablePointer<UnsafeMutablePointer<FFICandidate>?> {
+    let state = IMEState.shared
+    
+    return state.sync {
+        let composingText = state.composingText
+        let hiragana = composingText.convertTarget
+        let contextString = state.getConfigValue("context", default: "")
+        let options = state.getOptions(context: contextString)
+        let converted = state.requestCandidates(composingText, options: options)
+        
+        var result: [FFICandidate] = []
+        
+        for candidate in converted.mainResults {
+            let text = strdup(constructCandidateString(candidate: candidate, hiragana: hiragana))
+            let hiraganaPtr = strdup(hiragana)
+            let correspondingCount = candidate.correspondingCount
+            
+            var afterComposingText = composingText
+            afterComposingText.prefixComplete(correspondingCount: correspondingCount)
+            let subtext = strdup(afterComposingText.convertTarget)
+            
+            result.append(FFICandidate(text: text, subtext: subtext, hiragana: hiraganaPtr, correspondingCount: Int32(correspondingCount)))
+        }
+        
+        lengthPtr.pointee = result.count
+        return to_list_pointer(result)
+    }
+}
+
+@_silgen_name("ShrinkText")
+public func shrink_text(
+    offset: Int32
+) -> UnsafeMutablePointer<CChar> {
+    let state = IMEState.shared
+    
+    return state.sync {
+        var composingText = state.composingText
+        composingText.prefixComplete(correspondingCount: Int(offset))
+        state.composingText = composingText
+        
+        return _strdup(composingText.convertTarget)!
+    }
+}
+
+@_silgen_name("SetContext")
+public func set_context(
+    context: UnsafePointer<CChar>
+) {
+    let contextString = String(cString: context)
+    IMEState.shared.setConfigValue("context", contextString)
+}
+
+@_silgen_name("ResetLearning")
+public func reset_learning() {
+    let state = IMEState.shared
+    state.setConfigValue("shouldResetMemory", true)
+    
+    // 即座にリセットを反映するためにダミーの変換を実行
+    state.sync {
+        var tempComposingText = ComposingText()
+        tempComposingText.insertAtCursorPosition("a", inputStyle: .roman2kana)
+        _ = state.requestCandidates(tempComposingText, options: state.getOptions())
+    }
+    
+    print("Learning data reset requested")
+}
+
+// いい感じ変換FFI関数
+
+@_silgen_name("IsIikanjiKeyword")
+public func is_iikanji_keyword(
+    inputPtr: UnsafePointer<CChar>
+) -> Bool {
+    let state = IMEState.shared
+    let enabled = state.getConfigValue("iikanjiEnabled", default: false)
+    guard enabled else {
+        return false
+    }
+    
+    let input = String(cString: inputPtr)
+    return IikanjiKeyword.detect(input) != nil
+}
+
+@_silgen_name("IsIikanjiEnabled")
+public func is_iikanji_enabled() -> Bool {
+    return IMEState.shared.getConfigValue("iikanjiEnabled", default: false)
+}
+
+@_silgen_name("RequestIikanji")
+public func request_iikanji(
+    keywordPtr: UnsafePointer<CChar>,
+    contextPtr: UnsafePointer<CChar>
+) -> UnsafeMutablePointer<CChar>? {
+    let state = IMEState.shared
+    let keywordStr = String(cString: keywordPtr)
+    let contextStr = String(cString: contextPtr)
+    
+    guard let keyword = IikanjiKeyword.detect(keywordStr) else {
+        print("Unknown iikanji keyword: \(keywordStr)")
+        return nil
+    }
+    
+    let enabled = state.getConfigValue("iikanjiEnabled", default: false)
     guard enabled else {
         print("Iikanji is disabled")
         return nil
     }
     
-    guard !context.isEmpty else {
+    guard !contextStr.isEmpty else {
         print("Context is empty")
-        iikanjiError = "変換対象のテキストがありません"
+        state.iikanjiError = "変換対象のテキストがありません"
         return nil
     }
     
-    let provider = (config["iikanjiProvider"] as? String) ?? "zenzai"
+    let provider = state.getConfigValue("iikanjiProvider", default: "zenzai")
     
+    var result: String? = nil
     if provider == "zenzai" {
-        return requestIikanjiWithZenzai(keyword: keyword, context: context)
+        result = requestIikanjiWithZenzai(keyword: keyword, context: contextStr)
     } else {
-        return requestIikanjiWithOpenAI(keyword: keyword, context: context)
-    }
-}
-
-// Zenzaiを使ったいい感じ変換
-@MainActor func requestIikanjiWithZenzai(keyword: IikanjiKeyword, context: String) -> String? {
-    let zenzaiEnabled = (config["enable"] as? Bool) ?? false
-    guard zenzaiEnabled else {
-        print("Zenzai is not enabled, falling back to OpenAI")
-        iikanjiError = "Zenzaiが有効になっていません。設定でZenzaiを有効にするか、OpenAIプロバイダーを使用してください。"
-        return nil
+        result = requestIikanjiWithOpenAI(keyword: keyword, context: contextStr)
     }
     
-    // Zenzaiにプロンプトを渡して変換
-    // contextを入力として、キーワードに応じた変換を実行
-    let promptContext = "\(context)\n\(keyword.zenzaiPrompt)"
-    
-    var tempComposingText = ComposingText()
-    // 入力をひらがなに変換するためのテキストを設定
-    for char in promptContext {
-        tempComposingText.insertAtCursorPosition(String(char), inputStyle: .roman2kana)
-    }
-    
-    let options = getOptions(context: context)
-    let converted = converter.requestCandidates(tempComposingText, options: options)
-    
-    // 変換結果から最適な候補を取得
-    if let firstCandidate = converted.mainResults.first {
-        let result = constructCandidateString(candidate: firstCandidate, hiragana: tempComposingText.convertTarget)
-        return result
+    if let result = result {
+        state.iikanjiResult = result
+        return _strdup(result)
     }
     
     return nil
 }
 
-// OpenAI API呼び出し（同期的に結果を取得）
-@MainActor func requestIikanjiWithOpenAI(keyword: IikanjiKeyword, context: String) -> String? {
-    let apiKey = (config["openaiApiKey"] as? String) ?? ""
-    guard !apiKey.isEmpty else {
-        print("OpenAI API key is not set")
-        iikanjiError = "OpenAI APIキーが設定されていません"
+func requestIikanjiWithZenzai(keyword: IikanjiKeyword, context: String) -> String? {
+    let state = IMEState.shared
+    let zenzaiEnabled = state.getConfigValue("enable", default: false)
+    guard zenzaiEnabled else {
+        print("Zenzai is not enabled, falling back to OpenAI")
+        state.iikanjiError = "Zenzaiが有効になっていません。設定でZenzaiを有効にするか、OpenAIプロバイダーを使用してください。"
         return nil
     }
     
-    let model = (config["openaiModel"] as? String) ?? "gpt-5-mini"
-    let maxTokens = (config["openaiMaxTokens"] as? Int) ?? 256
-    let temperature = (config["openaiTemperature"] as? Double) ?? 0.7
+    let promptContext = "\(context)\n\(keyword.zenzaiPrompt)"
     
-    // GPT-5シリーズかどうかを判定
+    return state.sync {
+        var tempComposingText = ComposingText()
+        for char in promptContext {
+            tempComposingText.insertAtCursorPosition(String(char), inputStyle: .roman2kana)
+        }
+        
+        let options = state.getOptions(context: context)
+        let converted = state.requestCandidates(tempComposingText, options: options)
+        
+        if let firstCandidate = converted.mainResults.first {
+            return constructCandidateString(candidate: firstCandidate, hiragana: tempComposingText.convertTarget)
+        }
+        
+        return nil
+    }
+}
+
+func requestIikanjiWithOpenAI(keyword: IikanjiKeyword, context: String) -> String? {
+    let state = IMEState.shared
+    let apiKey = state.getConfigValue("openaiApiKey", default: "")
+    guard !apiKey.isEmpty else {
+        print("OpenAI API key is not set")
+        state.iikanjiError = "OpenAI APIキーが設定されていません"
+        return nil
+    }
+    
+    let model = state.getConfigValue("openaiModel", default: "gpt-4o-mini")
+    let maxTokens = state.getConfigValue("openaiMaxTokens", default: 256)
+    let temperature = state.getConfigValue("openaiTemperature", default: 0.7)
+    
     let isGpt5Series = model.hasPrefix("gpt-5")
     
-    // URLリクエストを作成
     guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
         return nil
     }
@@ -339,7 +588,6 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.timeoutInterval = 10.0
     
-    // GPT-5シリーズは max_completion_tokens を使用、それ以外は max_tokens を使用
     var body: [String: Any] = [
         "model": model,
         "messages": [
@@ -362,8 +610,7 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
         return nil
     }
     
-    // 同期的にリクエストを実行（セマフォを使用）
-    var result: String? = nil
+    nonisolated(unsafe) var result: String? = nil
     let semaphore = DispatchSemaphore(value: 0)
     
     let task = URLSession.shared.dataTask(with: request) { data, response, error in
@@ -396,169 +643,4 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
     _ = semaphore.wait(timeout: .now() + 10.0)
     
     return result
-}
-
-// いい感じ変換を実行
-@_silgen_name("RequestIikanji")
-@MainActor public func request_iikanji(
-    keywordPtr: UnsafePointer<CChar>,
-    contextPtr: UnsafePointer<CChar>
-) -> UnsafeMutablePointer<CChar>? {
-    let keywordStr = String(cString: keywordPtr)
-    let contextStr = String(cString: contextPtr)
-    
-    guard let keyword = IikanjiKeyword.detect(keywordStr) else {
-        print("Unknown iikanji keyword: \(keywordStr)")
-        return nil
-    }
-    
-    if let result = requestIikanji(keyword: keyword, context: contextStr) {
-        iikanjiResult = result
-        return _strdup(result)
-    }
-    
-    return nil
-}
-
-// いい感じ変換キーワードかどうかを判定
-@_silgen_name("IsIikanjiKeyword")
-@MainActor public func is_iikanji_keyword(
-    inputPtr: UnsafePointer<CChar>
-) -> Bool {
-    let enabled = (config["iikanjiEnabled"] as? Bool) ?? false
-    guard enabled else {
-        return false
-    }
-    
-    let input = String(cString: inputPtr)
-    return IikanjiKeyword.detect(input) != nil
-}
-
-// いい感じ変換が有効かどうか
-@_silgen_name("IsIikanjiEnabled")
-@MainActor public func is_iikanji_enabled() -> Bool {
-    return (config["iikanjiEnabled"] as? Bool) ?? false
-}
-
-@_silgen_name("ResetLearning")
-@MainActor public func reset_learning() {
-    // 次回の変換リクエスト時にリセットフラグを立てる
-    config["shouldResetMemory"] = true
-    
-    // 即座にリセットを反映するためにダミーの変換を実行
-    var tempComposingText = ComposingText()
-    tempComposingText.insertAtCursorPosition("a", inputStyle: .roman2kana)
-    _ = converter.requestCandidates(tempComposingText, options: getOptions())
-    
-    print("Learning data reset requested")
-}
-
-@_silgen_name("Initialize")
-@MainActor public func initialize(
-    path: UnsafePointer<CChar>,
-    use_zenzai: Bool
-) {
-    let path = String(cString: path)
-    execURL = URL(filePath: path)
-
-    load_config()
-
-    composingText.insertAtCursorPosition("a", inputStyle: .roman2kana)
-    converter.requestCandidates(composingText, options: getOptions())
-    composingText = ComposingText()
-}
-
-@_silgen_name("AppendText")
-@MainActor public func append_text(
-    input: UnsafePointer<CChar>,
-    cursorPtr: UnsafeMutablePointer<Int>
-) -> UnsafeMutablePointer<CChar> {
-    let inputString = String(cString: input)
-    composingText.insertAtCursorPosition(inputString, inputStyle: .roman2kana)
-
-    cursorPtr.pointee = composingText.convertTargetCursorPosition    
-    return _strdup(composingText.convertTarget)!
-}
-
-@_silgen_name("RemoveText")
-@MainActor public func remove_text(
-    cursorPtr: UnsafeMutablePointer<Int>
-) -> UnsafeMutablePointer<CChar> {
-    composingText.deleteBackwardFromCursorPosition(count: 1)
-
-    cursorPtr.pointee = composingText.convertTargetCursorPosition
-    return _strdup(composingText.convertTarget)!
-}
-
-@_silgen_name("MoveCursor")
-@MainActor public func move_cursor(
-    offset: Int32,
-    cursorPtr: UnsafeMutablePointer<Int>
-) -> UnsafeMutablePointer<CChar> {
-    let previousCursor = composingText.convertTargetCursorPosition
-    let cursor = composingText.moveCursorFromCursorPosition(count: Int(offset))
-    print("offset: \(offset), cursor: \(cursor)")
-
-    cursorPtr.pointee = cursor
-    return _strdup(composingText.convertTarget)!
-}
-
-@_silgen_name("ClearText")
-@MainActor public func clear_text() {
-    composingText = ComposingText()
-}
-
-func to_list_pointer(_ list: [FFICandidate]) -> UnsafeMutablePointer<UnsafeMutablePointer<FFICandidate>?> {
-    let pointer = UnsafeMutablePointer<UnsafeMutablePointer<FFICandidate>?>.allocate(capacity: list.count)
-    for (i, item) in list.enumerated() {
-        pointer[i] = UnsafeMutablePointer<FFICandidate>.allocate(capacity: 1)
-        pointer[i]?.pointee = item
-    }
-    return pointer
-}
-
-@_silgen_name("GetComposedText")
-@MainActor public func get_composed_text(lengthPtr: UnsafeMutablePointer<Int>) -> UnsafeMutablePointer<UnsafeMutablePointer<FFICandidate>?> {
-    let hiragana = composingText.convertTarget
-    let contextString = (config["context"] as? String) ?? ""
-    let options = getOptions(context: contextString)
-    let converted = converter.requestCandidates(composingText, options: options)
-    var result: [FFICandidate] = []
-
-    for i in 0..<converted.mainResults.count {
-        let candidate = converted.mainResults[i]
-
-        let text = strdup(constructCandidateString(candidate: candidate, hiragana: hiragana))
-        let hiragana = strdup(hiragana)
-        let correspondingCount = candidate.correspondingCount
-
-        var afterComposingText = composingText
-        afterComposingText.prefixComplete(correspondingCount: correspondingCount)
-        let subtext = strdup(afterComposingText.convertTarget)
-
-        result.append(FFICandidate(text: text, subtext: subtext, hiragana: hiragana, correspondingCount: Int32(correspondingCount)))        
-    }
-
-    lengthPtr.pointee = result.count
-
-    return to_list_pointer(result)
-}
-
-@_silgen_name("ShrinkText")
-@MainActor public func shrink_text(
-    offset: Int32
-) -> UnsafeMutablePointer<CChar>  {
-    var afterComposingText = composingText
-    afterComposingText.prefixComplete(correspondingCount: Int(offset))
-    composingText = afterComposingText
-
-    return _strdup(composingText.convertTarget)!
-}
-
-@_silgen_name("SetContext")
-@MainActor public func set_context(
-    context: UnsafePointer<CChar>
-) {
-    let contextString = String(cString: context)
-    config["context"] = contextString
 }

@@ -92,17 +92,21 @@ fn reset_learning(state: tauri::State<AppState>) -> Result<(), String> {
     // 学習データのディレクトリを削除
     let appdata = std::env::var("APPDATA").map_err(|e| e.to_string())?;
     let memory_dir = PathBuf::from(appdata).join("Azookey").join("memory");
-    
+
     if memory_dir.exists() {
         std::fs::remove_dir_all(&memory_dir).map_err(|e| e.to_string())?;
     }
-    
+
     // ディレクトリを再作成
     std::fs::create_dir_all(&memory_dir).map_err(|e| e.to_string())?;
-    
+
     // IPCで変換エンジンに通知
-    state.ipc.clone().update_config().map_err(|e| e.to_string())?;
-    
+    state
+        .ipc
+        .clone()
+        .update_config()
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -121,14 +125,14 @@ fn add_dictionary_entry(state: tauri::State<AppState>, entry: UserDictEntry) -> 
     if entry.word.trim().is_empty() {
         return Err("単語を入力してください".to_string());
     }
-    
+
     let mut dict = UserDictionary::load();
     dict.add_entry(entry);
     dict.save()?;
-    
+
     // IPCで変換エンジンに通知
     let _ = state.ipc.clone().update_config();
-    
+
     Ok(())
 }
 
@@ -137,15 +141,19 @@ fn remove_dictionary_entry(state: tauri::State<AppState>, index: usize) -> Resul
     let mut dict = UserDictionary::load();
     dict.remove_entry(index)?;
     dict.save()?;
-    
+
     // IPCで変換エンジンに通知
     let _ = state.ipc.clone().update_config();
-    
+
     Ok(())
 }
 
 #[tauri::command]
-fn update_dictionary_entry(state: tauri::State<AppState>, index: usize, entry: UserDictEntry) -> Result<(), String> {
+fn update_dictionary_entry(
+    state: tauri::State<AppState>,
+    index: usize,
+    entry: UserDictEntry,
+) -> Result<(), String> {
     // バリデーション
     if entry.reading.trim().is_empty() {
         return Err("読みを入力してください".to_string());
@@ -153,40 +161,47 @@ fn update_dictionary_entry(state: tauri::State<AppState>, index: usize, entry: U
     if entry.word.trim().is_empty() {
         return Err("単語を入力してください".to_string());
     }
-    
+
     let mut dict = UserDictionary::load();
     dict.update_entry(index, entry)?;
     dict.save()?;
-    
+
     // IPCで変換エンジンに通知
     let _ = state.ipc.clone().update_config();
-    
+
     Ok(())
 }
 
 #[tauri::command]
 fn export_dictionary(path: String) -> Result<(), String> {
     let dict = UserDictionary::load();
-    
+
     let mut content = String::from("# ユーザー辞書エクスポート\n# 読み<TAB>単語<TAB>品詞\n");
     for entry in &dict.entries {
-        content.push_str(&format!("{}\t{}\t{}\n", entry.reading, entry.word, entry.part_of_speech));
+        content.push_str(&format!(
+            "{}\t{}\t{}\n",
+            entry.reading, entry.word, entry.part_of_speech
+        ));
     }
-    
+
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn import_dictionary(state: tauri::State<AppState>, path: String, merge: bool) -> Result<usize, String> {
+fn import_dictionary(
+    state: tauri::State<AppState>,
+    path: String,
+    merge: bool,
+) -> Result<usize, String> {
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    
+
     let mut imported_entries = Vec::new();
     for line in content.lines() {
         // コメント行をスキップ
         if line.starts_with('#') || line.trim().is_empty() {
             continue;
         }
-        
+
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() >= 2 {
             imported_entries.push(UserDictEntry {
@@ -196,24 +211,24 @@ fn import_dictionary(state: tauri::State<AppState>, path: String, merge: bool) -
             });
         }
     }
-    
+
     let count = imported_entries.len();
-    
+
     let mut dict = if merge {
         UserDictionary::load()
     } else {
         UserDictionary::default()
     };
-    
+
     for entry in imported_entries {
         dict.add_entry(entry);
     }
-    
+
     dict.save()?;
-    
+
     // IPCで変換エンジンに通知
     let _ = state.ipc.clone().update_config();
-    
+
     Ok(count)
 }
 

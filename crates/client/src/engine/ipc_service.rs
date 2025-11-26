@@ -14,8 +14,8 @@ use windows::Win32::Foundation::ERROR_PIPE_BUSY;
 pub struct IPCService {
     // kkc server client
     azookey_client: AzookeyServiceClient<tonic::transport::channel::Channel>,
-    // candidate window server client
-    window_client: WindowServiceClient<tonic::transport::channel::Channel>,
+    // candidate window server client (optional - may fail to connect)
+    window_client: Option<WindowServiceClient<tonic::transport::channel::Channel>>,
     runtime: Arc<tokio::runtime::Runtime>,
 }
 
@@ -49,26 +49,12 @@ impl IPCService {
             )),
         )?;
 
-        let ui_channel = runtime.block_on(
-            Endpoint::try_from("http://[::]:50052")?.connect_with_connector(service_fn(
-                |_| async {
-                    let client = loop {
-                        match ClientOptions::new().open(r"\\.\pipe\azookey_ui") {
-                            Ok(client) => break client,
-                            Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY.0 as i32) => (),
-                            Err(e) => return Err(e),
-                        }
-
-                        time::sleep(Duration::from_millis(50)).await;
-                    };
-
-                    Ok::<_, std::io::Error>(TokioIo::new(client))
-                },
-            )),
-        )?;
+        // UI接続は完全にスキップ（開発ビルドではUIが起動できないため）
+        // TODO: 署名付きビルドでUIを有効にする
+        let window_client: Option<WindowServiceClient<tonic::transport::channel::Channel>> = None;
+        tracing::info!("UI connection skipped (development build)");
 
         let azookey_client = AzookeyServiceClient::new(server_channel);
-        let window_client = WindowServiceClient::new(ui_channel);
         tracing::debug!("Connected to server: {:?}", azookey_client);
 
         Ok(Self {
@@ -215,21 +201,19 @@ impl IPCService {
 impl IPCService {
     #[tracing::instrument]
     pub fn show_window(&mut self) -> anyhow::Result<()> {
-        let request = tonic::Request::new(shared::proto::EmptyResponse {});
-        self.runtime
-            .clone()
-            .block_on(self.window_client.show_window(request))?;
-
+        if let Some(ref mut client) = self.window_client {
+            let request = tonic::Request::new(shared::proto::EmptyResponse {});
+            self.runtime.clone().block_on(client.show_window(request))?;
+        }
         Ok(())
     }
 
     #[tracing::instrument]
     pub fn hide_window(&mut self) -> anyhow::Result<()> {
-        let request = tonic::Request::new(shared::proto::EmptyResponse {});
-        self.runtime
-            .clone()
-            .block_on(self.window_client.hide_window(request))?;
-
+        if let Some(ref mut client) = self.window_client {
+            let request = tonic::Request::new(shared::proto::EmptyResponse {});
+            self.runtime.clone().block_on(client.hide_window(request))?;
+        }
         Ok(())
     }
 
@@ -241,50 +225,48 @@ impl IPCService {
         bottom: i32,
         right: i32,
     ) -> anyhow::Result<()> {
-        let request = tonic::Request::new(shared::proto::SetPositionRequest {
-            position: Some(shared::proto::WindowPosition {
-                top,
-                left,
-                bottom,
-                right,
-            }),
-        });
-        self.runtime
-            .clone()
-            .block_on(self.window_client.set_window_position(request))?;
-
+        if let Some(ref mut client) = self.window_client {
+            let request = tonic::Request::new(shared::proto::SetPositionRequest {
+                position: Some(shared::proto::WindowPosition {
+                    top,
+                    left,
+                    bottom,
+                    right,
+                }),
+            });
+            self.runtime
+                .clone()
+                .block_on(client.set_window_position(request))?;
+        }
         Ok(())
     }
 
     #[tracing::instrument]
     pub fn set_candidates(&mut self, candidates: Vec<String>) -> anyhow::Result<()> {
-        let request = tonic::Request::new(shared::proto::SetCandidateRequest { candidates });
-        self.runtime
-            .clone()
-            .block_on(self.window_client.set_candidate(request))?;
-
+        if let Some(ref mut client) = self.window_client {
+            let request = tonic::Request::new(shared::proto::SetCandidateRequest { candidates });
+            self.runtime.clone().block_on(client.set_candidate(request))?;
+        }
         Ok(())
     }
 
     #[tracing::instrument]
     pub fn set_selection(&mut self, index: i32) -> anyhow::Result<()> {
-        let request = tonic::Request::new(shared::proto::SetSelectionRequest { index });
-        self.runtime
-            .clone()
-            .block_on(self.window_client.set_selection(request))?;
-
+        if let Some(ref mut client) = self.window_client {
+            let request = tonic::Request::new(shared::proto::SetSelectionRequest { index });
+            self.runtime.clone().block_on(client.set_selection(request))?;
+        }
         Ok(())
     }
 
     #[tracing::instrument]
     pub fn set_input_mode(&mut self, mode: &str) -> anyhow::Result<()> {
-        let request = tonic::Request::new(shared::proto::SetInputModeRequest {
-            mode: mode.to_string(),
-        });
-        self.runtime
-            .clone()
-            .block_on(self.window_client.set_input_mode(request))?;
-
+        if let Some(ref mut client) = self.window_client {
+            let request = tonic::Request::new(shared::proto::SetInputModeRequest {
+                mode: mode.to_string(),
+            });
+            self.runtime.clone().block_on(client.set_input_mode(request))?;
+        }
         Ok(())
     }
 }
@@ -299,7 +281,7 @@ impl IPCService {
             .runtime
             .clone()
             .block_on(self.azookey_client.is_iikanji_enabled(request))?;
-        
+
         Ok(response.into_inner().enabled)
     }
 
@@ -313,13 +295,17 @@ impl IPCService {
             .runtime
             .clone()
             .block_on(self.azookey_client.is_iikanji_keyword(request))?;
-        
+
         Ok(response.into_inner().is_keyword)
     }
 
     /// いい感じ変換を実行
     #[tracing::instrument]
-    pub fn request_iikanji(&mut self, keyword: &str, context: &str) -> anyhow::Result<Option<String>> {
+    pub fn request_iikanji(
+        &mut self,
+        keyword: &str,
+        context: &str,
+    ) -> anyhow::Result<Option<String>> {
         let request = tonic::Request::new(shared::proto::RequestIikanjiRequest {
             keyword: keyword.to_string(),
             context: context.to_string(),
@@ -328,7 +314,7 @@ impl IPCService {
             .runtime
             .clone()
             .block_on(self.azookey_client.request_iikanji(request))?;
-        
+
         let inner = response.into_inner();
         if inner.success {
             Ok(Some(inner.result))
