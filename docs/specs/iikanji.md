@@ -222,73 +222,54 @@ enum IikanjiKeyword: String, CaseIterable {
 4. [x] OpenAIモデル選択（最新モデル対応）
 5. [x] プライバシー警告表示
 
-### Phase 3: IMEクライアント統合 🚧 作業中
+### Phase 3: IMEクライアント統合 ✅ 完了
 
 IMEで「いい感じ変換」を実際に使えるようにするための実装。
 
-#### 3.1 FFI関数の追加（Rust側）
+#### 3.1 gRPCサービスの追加
 
-`crates/client/src/engine/ffi.rs` に以下の関数を追加:
+`crates/shared/service.proto` にいい感じ変換用のRPCを追加:
 
-```rust
-extern "C" {
-    // いい感じ変換キーワードかどうかを判定
-    pub fn IsIikanjiKeyword(input: *const c_char) -> bool;
-    
-    // いい感じ変換を実行
-    pub fn RequestIikanji(
-        keyword: *const c_char,
-        context: *const c_char
-    ) -> *mut c_char;
-    
-    // いい感じ変換が有効かどうか
-    pub fn IsIikanjiEnabled() -> bool;
-}
+```protobuf
+// いい感じ変換
+rpc IsIikanjiKeyword (IsIikanjiKeywordRequest) returns (IsIikanjiKeywordResponse);
+rpc IsIikanjiEnabled (IsIikanjiEnabledRequest) returns (IsIikanjiEnabledResponse);
+rpc RequestIikanji (RequestIikanjiRequest) returns (RequestIikanjiResponse);
 ```
 
-#### 3.2 キーワード認識処理
+#### 3.2 サーバー側実装
 
-`crates/client/src/engine/` にキーワード認識ロジックを追加:
+`crates/server/src/main.rs` にFFI関数宣言とgRPCハンドラーを追加。
 
-1. [ ] 入力テキストがキーワード（えいご、にほんご等）かをチェック
-2. [ ] キーワードの場合、直前のコンテキストを取得
-3. [ ] `RequestIikanji` FFI関数を呼び出し
-4. [ ] 結果を候補リストに追加
+#### 3.3 IPCサービス
 
-#### 3.3 コンテキスト管理
+`crates/client/src/engine/ipc_service.rs` にいい感じ変換メソッドを追加:
+- `is_iikanji_enabled()` - いい感じ変換が有効かを確認
+- `is_iikanji_keyword(input)` - キーワード判定
+- `request_iikanji(keyword, context)` - いい感じ変換実行
 
-```rust
-// 直前に確定したテキストを保持
-static LAST_COMMITTED_TEXT: Mutex<String> = Mutex::new(String::new());
+#### 3.4 コンテキスト管理
 
-// テキスト確定時にコンテキストを更新
-fn on_text_committed(text: &str) {
-    let mut ctx = LAST_COMMITTED_TEXT.lock().unwrap();
-    *ctx = text.to_string();
-}
+`crates/client/src/engine/composition.rs` で確定テキストを保持:
+- `last_committed_text` フィールドを追加
+- `EndComposition` 時にコンテキストを保存
+- `AppendText` 時にキーワード判定といい感じ変換を実行
 
-// いい感じ変換時にコンテキストを取得
-fn get_context() -> String {
-    LAST_COMMITTED_TEXT.lock().unwrap().clone()
-}
-```
+#### 3.5 候補ウィンドウへの統合
 
-#### 3.4 候補ウィンドウへの統合
+- いい感じ変換結果を候補リストの先頭に表示
+- 結果に「🤖」マークを付けて区別
 
-1. [ ] いい感じ変換結果を候補リストの先頭に表示
-2. [ ] 結果に特別なマーク（🤖 等）を付けて区別
-3. [ ] 選択時に結果を確定
-
-#### 3.5 実装タスク一覧
+#### 3.6 実装タスク一覧
 
 | タスクID | 内容 | 優先度 | 状態 |
 |---------|------|--------|------|
-| IK-IME-01 | FFI関数宣言の追加 | 高 | [ ] |
-| IK-IME-02 | キーワード判定処理の実装 | 高 | [ ] |
-| IK-IME-03 | コンテキスト管理の実装 | 高 | [ ] |
-| IK-IME-04 | RequestIikanji呼び出しの実装 | 高 | [ ] |
-| IK-IME-05 | 候補ウィンドウへの結果表示 | 中 | [ ] |
-| IK-IME-06 | エラーハンドリング | 中 | [ ] |
+| IK-IME-01 | gRPCサービス定義の追加 | 高 | [x] |
+| IK-IME-02 | サーバー側FFI関数・ハンドラー追加 | 高 | [x] |
+| IK-IME-03 | IPCServiceにメソッド追加 | 高 | [x] |
+| IK-IME-04 | コンテキスト管理の実装 | 高 | [x] |
+| IK-IME-05 | キーワード判定処理の実装 | 高 | [x] |
+| IK-IME-06 | 候補ウィンドウへの結果表示 | 中 | [x] |
 | IK-IME-07 | 統合テスト | 中 | [ ] |
 
 #### 3.6 動作フロー

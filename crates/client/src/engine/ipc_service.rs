@@ -288,3 +288,53 @@ impl IPCService {
         Ok(())
     }
 }
+
+// いい感じ変換関連メソッド
+impl IPCService {
+    /// いい感じ変換が有効かどうかを確認
+    #[tracing::instrument]
+    pub fn is_iikanji_enabled(&mut self) -> anyhow::Result<bool> {
+        let request = tonic::Request::new(shared::proto::IsIikanjiEnabledRequest {});
+        let response = self
+            .runtime
+            .clone()
+            .block_on(self.azookey_client.is_iikanji_enabled(request))?;
+        
+        Ok(response.into_inner().enabled)
+    }
+
+    /// 入力がいい感じ変換キーワードかどうかを判定
+    #[tracing::instrument]
+    pub fn is_iikanji_keyword(&mut self, input: &str) -> anyhow::Result<bool> {
+        let request = tonic::Request::new(shared::proto::IsIikanjiKeywordRequest {
+            input: input.to_string(),
+        });
+        let response = self
+            .runtime
+            .clone()
+            .block_on(self.azookey_client.is_iikanji_keyword(request))?;
+        
+        Ok(response.into_inner().is_keyword)
+    }
+
+    /// いい感じ変換を実行
+    #[tracing::instrument]
+    pub fn request_iikanji(&mut self, keyword: &str, context: &str) -> anyhow::Result<Option<String>> {
+        let request = tonic::Request::new(shared::proto::RequestIikanjiRequest {
+            keyword: keyword.to_string(),
+            context: context.to_string(),
+        });
+        let response = self
+            .runtime
+            .clone()
+            .block_on(self.azookey_client.request_iikanji(request))?;
+        
+        let inner = response.into_inner();
+        if inner.success {
+            Ok(Some(inner.result))
+        } else {
+            tracing::warn!("Iikanji request failed: {}", inner.error);
+            Ok(None)
+        }
+    }
+}

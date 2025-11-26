@@ -15,6 +15,7 @@ use super::{
     text_util::{to_half_katakana, to_katakana},
     user_action::{Function, Navigation},
 };
+use shared::AppConfig;
 use windows::Win32::{
     Foundation::WPARAM,
     UI::{
@@ -48,6 +49,13 @@ pub struct Composition {
 
     pub state: CompositionState,
     pub tip_composition: Option<ITfComposition>,
+    
+    // いい感じ変換用: 直前に確定したテキストを保持
+    pub last_committed_text: String,
+    // いい感じ変換モード中かどうか
+    pub is_iikanji_mode: bool,
+    // いい感じ変換のキーワード
+    pub iikanji_keyword: String,
 }
 
 impl ITfCompositionSink_Impl for TextServiceFactory_Impl {
@@ -91,7 +99,9 @@ impl TextServiceFactory {
             (composition, mode)
         };
 
-        let action = UserAction::try_from(wparam.0)?;
+        // キーバインド設定を読み込み
+        let config = AppConfig::read();
+        let action = UserAction::from_key_code_with_config(wparam.0, &config.keybindings)?;
 
         let (transition, actions) = match composition.state {
             CompositionState::None => match action {
@@ -115,6 +125,16 @@ impl TextServiceFactory {
                         InputMode::Kana => ClientAction::SetIMEMode(InputMode::Latin),
                         InputMode::Latin => ClientAction::SetIMEMode(InputMode::Kana),
                     }],
+                ),
+                // カスタムキーバインド: かなモードに切り替え
+                UserAction::SetKanaMode => (
+                    CompositionState::None,
+                    vec![ClientAction::SetIMEMode(InputMode::Kana)],
+                ),
+                // カスタムキーバインド: 英数モードに切り替え
+                UserAction::SetLatinMode => (
+                    CompositionState::None,
+                    vec![ClientAction::SetIMEMode(InputMode::Latin)],
                 ),
                 _ => {
                     return Ok(None);
@@ -172,6 +192,19 @@ impl TextServiceFactory {
                     ),
                 },
                 UserAction::ToggleInputMode => (
+                    CompositionState::None,
+                    vec![
+                        ClientAction::EndComposition,
+                        ClientAction::SetIMEMode(InputMode::Latin),
+                    ],
+                ),
+                // カスタムキーバインド: かなモードに切り替え（Composing中）
+                UserAction::SetKanaMode => (
+                    CompositionState::Composing,
+                    vec![], // 既にかなモードなので何もしない
+                ),
+                // カスタムキーバインド: 英数モードに切り替え（Composing中）
+                UserAction::SetLatinMode => (
                     CompositionState::None,
                     vec![
                         ClientAction::EndComposition,
@@ -260,6 +293,19 @@ impl TextServiceFactory {
                     ),
                 },
                 UserAction::ToggleInputMode => (
+                    CompositionState::None,
+                    vec![
+                        ClientAction::EndComposition,
+                        ClientAction::SetIMEMode(InputMode::Latin),
+                    ],
+                ),
+                // カスタムキーバインド: かなモードに切り替え（Previewing中）
+                UserAction::SetKanaMode => (
+                    CompositionState::Previewing,
+                    vec![], // 既にかなモードなので何もしない
+                ),
+                // カスタムキーバインド: 英数モードに切り替え（Previewing中）
+                UserAction::SetLatinMode => (
                     CompositionState::None,
                     vec![
                         ClientAction::EndComposition,
@@ -358,6 +404,13 @@ impl TextServiceFactory {
                     ipc_service.show_window()?;
                 }
                 ClientAction::EndComposition => {
+                    // いい感じ変換用: 確定テキストをコンテキストとして保存
+                    let committed_text = if !preview.is_empty() {
+                        preview.clone()
+                    } else {
+                        String::new()
+                    };
+                    
                     self.end_composition()?;
                     selection_index = 0;
                     corresponding_count = 0;
@@ -368,6 +421,13 @@ impl TextServiceFactory {
                     ipc_service.hide_window()?;
                     ipc_service.set_candidates(vec![])?;
                     ipc_service.clear_text()?;
+                    
+                    // コンテキストを保存（次のいい感じ変換で使用）
+                    if !committed_text.is_empty() {
+                        let text_service = self.borrow()?;
+                        let mut composition = text_service.borrow_mut_composition()?;
+                        composition.last_committed_text = committed_text;
+                    }
                 }
                 ClientAction::AppendText(text) => {
                     raw_input.push_str(&text);
@@ -388,8 +448,29 @@ impl TextServiceFactory {
                     suffix = sub_text.clone();
                     raw_hiragana = hiragana.clone();
 
+                    // いい感じ変換: 入力がキーワードかチェック
+                    let mut final_candidates = candidates.texts.clone();
+                    if let Ok(is_keyword) = ipc_service.is_iikanji_keyword(&raw_hiragana) {
+                        if is_keyword {
+                            // 直前の確定テキストを取得してコンテキストとして使用
+                            let last_committed = {
+                                let text_service = self.borrow()?;
+                                let comp = text_service.borrow_composition()?;
+                                comp.last_committed_text.clone()
+                            };
+                            
+                            if !last_committed.is_empty() {
+                                if let Ok(Some(iikanji_result)) = ipc_service.request_iikanji(&raw_hiragana, &last_committed) {
+                                    // いい感じ変換結果を候補の先頭に追加
+                                    final_candidates.insert(0, format!("🤖 {}", iikanji_result));
+                                    tracing::info!("Iikanji result: {}", iikanji_result);
+                                }
+                            }
+                        }
+                    }
+
                     self.set_text(&text, &sub_text)?;
-                    ipc_service.set_candidates(candidates.texts.clone())?;
+                    ipc_service.set_candidates(final_candidates)?;
                     ipc_service.set_selection(selection_index as i32)?;
                 }
                 ClientAction::RemoveText => {

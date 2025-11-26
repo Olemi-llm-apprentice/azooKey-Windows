@@ -66,6 +66,32 @@ message SetContextResponse {}
 message UpdateConfigRequest {}
 message UpdateConfigResponse {}
 
+// いい感じ変換関連メッセージ
+message IsIikanjiKeywordRequest {
+  string input = 1; // 入力テキスト（キーワードかどうか判定する）
+}
+
+message IsIikanjiKeywordResponse {
+  bool is_keyword = 1; // キーワードかどうか
+}
+
+message IsIikanjiEnabledRequest {}
+
+message IsIikanjiEnabledResponse {
+  bool enabled = 1; // いい感じ変換が有効かどうか
+}
+
+message RequestIikanjiRequest {
+  string keyword = 1; // キーワード（えいご、にほんご等）
+  string context = 2; // 変換対象のコンテキスト（直前の確定テキスト）
+}
+
+message RequestIikanjiResponse {
+  bool success = 1;      // 変換成功かどうか
+  string result = 2;     // 変換結果
+  string error = 3;      // エラーメッセージ（失敗時）
+}
+
 
 // Service definition for text editing operations.
 service AzookeyService {
@@ -76,4 +102,9 @@ service AzookeyService {
   rpc ClearText (ClearTextRequest) returns (ClearTextResponse);
   rpc SetContext (SetContextRequest) returns (SetContextResponse);
   rpc UpdateConfig (UpdateConfigRequest) returns (UpdateConfigResponse);
+  
+  // いい感じ変換
+  rpc IsIikanjiKeyword (IsIikanjiKeywordRequest) returns (IsIikanjiKeywordResponse);
+  rpc IsIikanjiEnabled (IsIikanjiEnabledRequest) returns (IsIikanjiEnabledResponse);
+  rpc RequestIikanji (RequestIikanjiRequest) returns (RequestIikanjiResponse);
 }

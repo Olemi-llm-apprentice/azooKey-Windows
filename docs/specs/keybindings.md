@@ -180,21 +180,27 @@ impl UserAction {
 
 ## 4. 実装計画
 
-### Phase 1: 基本実装
+### Phase 1: 基本実装 ✅ 完了
 
 1. [x] 設計仕様書の作成
-2. [ ] `KeybindingsConfig` をRust共有ライブラリに追加
-3. [ ] `AppConfig` に `keybindings` フィールドを追加
-4. [ ] `user_action.rs` を設定参照型に変更
-5. [ ] デフォルトキーバインドの定義
+2. [x] `KeybindingsConfig` をRust共有ライブラリに追加
+3. [x] `AppConfig` に `keybindings` フィールドを追加
+4. [x] `user_action.rs` を設定参照型に変更
+5. [x] デフォルトキーバインドの定義
 
-### Phase 2: 設定UI
+### Phase 2: 設定UI ✅ 完了
 
-1. [ ] 設定アプリにキーバインド設定ページを追加
-2. [ ] キー入力キャプチャ機能
-3. [ ] キーバインドの追加/削除UI
+1. [x] 設定アプリにキーバインド設定ページを追加
+2. [x] キー入力キャプチャ機能
+3. [x] キーバインドの追加/削除UI
 
-### Phase 3: 拡張
+### Phase 3: IMEクライアント統合 ✅ 完了
+
+1. [x] `user_action.rs` に `from_key_code_with_config` メソッド追加
+2. [x] `composition.rs` で設定からキーバインドを読み込み
+3. [x] `SetKanaMode`/`SetLatinMode` アクション対応
+
+### Phase 4: 拡張（将来）
 
 1. [ ] 修飾キー対応（Ctrl, Alt, Shift）
 2. [ ] キーバインドのエクスポート/インポート

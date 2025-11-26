@@ -1,5 +1,6 @@
 use crate::extension::VKeyExt;
 use anyhow::{Context, Result};
+use shared::{KeyAction, KeybindingsConfig};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyboardState, ToUnicode, VK_SHIFT};
 
 #[derive(Debug)]
@@ -15,6 +16,8 @@ pub enum UserAction {
     Function(Function),
     Number(i8),
     ToggleInputMode,
+    SetKanaMode,
+    SetLatinMode,
 }
 
 #[derive(Debug)]
@@ -34,9 +37,24 @@ pub enum Function {
     Ten,
 }
 
-impl TryFrom<usize> for UserAction {
-    type Error = anyhow::Error;
-    fn try_from(key_code: usize) -> Result<UserAction> {
+impl UserAction {
+    /// 設定からキーバインドを参照してアクションを決定
+    pub fn from_key_code_with_config(key_code: usize, keybindings: &KeybindingsConfig) -> Result<UserAction> {
+        // まずカスタムキーバインドをチェック
+        if let Some(key_action) = keybindings.get_action(key_code as u32) {
+            return Ok(match key_action {
+                KeyAction::ToggleInputMode => UserAction::ToggleInputMode,
+                KeyAction::SetKanaMode => UserAction::SetKanaMode,
+                KeyAction::SetLatinMode => UserAction::SetLatinMode,
+                KeyAction::ConvertHiragana => UserAction::Function(Function::Six),
+                KeyAction::ConvertKatakana => UserAction::Function(Function::Seven),
+                KeyAction::ConvertHalfKatakana => UserAction::Function(Function::Eight),
+                KeyAction::ConvertFullLatin => UserAction::Function(Function::Nine),
+                KeyAction::ConvertHalfLatin => UserAction::Function(Function::Ten),
+            });
+        }
+
+        // カスタムキーバインドにマッチしない場合はデフォルト処理
         let action = match key_code {
             0x08 => UserAction::Backspace, // VK_BACK
             0x09 => UserAction::Tab,       // VK_TAB
@@ -65,14 +83,6 @@ impl TryFrom<usize> for UserAction {
                 }
             }
 
-            0x75 => UserAction::Function(Function::Six), // VK_F6
-            0x76 => UserAction::Function(Function::Seven), // VK_F7
-            0x77 => UserAction::Function(Function::Eight), // VK_F8
-            0x78 => UserAction::Function(Function::Nine), // VK_F9
-            0x79 => UserAction::Function(Function::Ten), // VK_F10
-
-            0xF3 | 0xF4 => UserAction::ToggleInputMode, // Zenkaku/Hankaku
-
             _ => {
                 let key_state = {
                     let mut key_state = [0u8; 256];
@@ -96,5 +106,13 @@ impl TryFrom<usize> for UserAction {
         };
 
         Ok(action)
+    }
+}
+
+impl TryFrom<usize> for UserAction {
+    type Error = anyhow::Error;
+    fn try_from(key_code: usize) -> Result<UserAction> {
+        // デフォルトのキーバインドを使用
+        UserAction::from_key_code_with_config(key_code, &KeybindingsConfig::default())
     }
 }

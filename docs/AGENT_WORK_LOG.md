@@ -760,3 +760,46 @@ OpenAI API接続テストとGPT-5パラメータ対応
 | IK-IME-07 | 統合テスト | 中 |
 
 ---
+
+[2025-11-26 12:30:00]
+
+## 作業内容
+
+いい感じ変換IMEクライアント統合 & カスタムキーバインドIME適用の実装
+
+### 実施した作業
+
+#### いい感じ変換（Phase 3: IMEクライアント統合）
+- gRPCサービス定義の追加（IsIikanjiKeyword, IsIikanjiEnabled, RequestIikanji）
+- サーバー側FFI関数宣言とgRPCハンドラーの追加
+- IPCServiceにいい感じ変換メソッド追加
+- Compositionにコンテキスト管理フィールド追加（last_committed_text）
+- テキスト確定時にコンテキストを保存
+- AppendText時にキーワード判定といい感じ変換実行
+- 変換結果を候補リストの先頭に「🤖」マーク付きで表示
+
+#### カスタムキーバインド（IMEクライアント適用）
+- UserActionにfrom_key_code_with_configメソッド追加
+- SetKanaMode/SetLatinModeアクション追加
+- composition.rsで設定からキーバインドを読み込み適用
+- 各Composition状態でSetKanaMode/SetLatinModeをハンドリング
+
+### 変更したファイル
+
+- `crates/shared/service.proto` - いい感じ変換gRPCサービス追加
+- `crates/server/src/main.rs` - FFI関数宣言、gRPCハンドラー追加
+- `crates/client/src/engine/ipc_service.rs` - いい感じ変換メソッド追加
+- `crates/client/src/engine/composition.rs` - コンテキスト管理、キーバインド適用
+- `crates/client/src/engine/user_action.rs` - カスタムキーバインド対応
+- `docs/specs/roadmap.md` - 進捗更新
+- `docs/specs/features.md` - 実装状況更新
+- `docs/specs/iikanji.md` - Phase 3完了更新
+- `docs/specs/keybindings.md` - 実装計画更新
+
+### 備考
+
+- コンパイル成功確認済み
+- リンカーエラーは既存のSwiftサーバーライブラリに関するもので、今回の変更とは無関係
+- 統合テストは今後の課題
+
+---
