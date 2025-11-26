@@ -9,6 +9,8 @@ use shared::proto::{
     ClearTextRequest,
     ClearTextResponse,
     ComposingText,
+    GetAllCandidatesRequest,
+    GetAllCandidatesResponse,
     IsIikanjiEnabledRequest,
     IsIikanjiEnabledResponse,
     // いい感じ変換
@@ -381,6 +383,15 @@ impl AzookeyService for MyAzookeyService {
                 error: "変換に失敗しました".to_string(),
             })),
         }
+    }
+
+    // ライブ変換: 全候補取得（変換キー押下時に呼ぶ）
+    async fn get_all_candidates(
+        &self,
+        _: Request<GetAllCandidatesRequest>,
+    ) -> Result<Response<GetAllCandidatesResponse>, Status> {
+        let suggestions = get_composed_text();
+        Ok(Response::new(GetAllCandidatesResponse { suggestions }))
     }
 }
 
