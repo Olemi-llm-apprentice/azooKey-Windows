@@ -538,15 +538,24 @@ impl TextServiceFactory {
                     ipc_service.clear_text()?;
                 }
                 ClientAction::SetSelection(selection) => {
-                    let candidates = {
+                    // 現在の候補を取得
+                    let mut current_candidates = {
                         let text_service = self.borrow()?;
                         let composition = text_service.borrow_composition()?.clone();
-                        let candidates = composition.candidates.clone();
-                        candidates
+                        composition.candidates.clone()
                     };
 
-                    let texts = candidates.texts.clone();
-                    let sub_texts = candidates.sub_texts.clone();
+                    // ライブ変換: 候補が1件以下の場合、全候補を取得
+                    if current_candidates.texts.len() <= 1 {
+                        current_candidates = ipc_service.get_all_candidates(&current_candidates.hiragana)?;
+                        candidates = current_candidates.clone();
+                        
+                        // 候補ウィンドウを更新
+                        ipc_service.set_candidates(current_candidates.texts.clone())?;
+                    }
+
+                    let texts = current_candidates.texts.clone();
+                    let sub_texts = current_candidates.sub_texts.clone();
 
                     selection_index = match selection {
                         SetSelectionType::Up => max(0, selection_index - 1),
@@ -557,8 +566,8 @@ impl TextServiceFactory {
                     ipc_service.set_selection(selection_index as i32)?;
                     let text = texts[selection_index as usize].clone();
                     let sub_text = sub_texts[selection_index as usize].clone();
-                    let hiragana = candidates.hiragana.clone();
-                    corresponding_count = candidates.corresponding_count[selection_index as usize];
+                    let hiragana = current_candidates.hiragana.clone();
+                    corresponding_count = current_candidates.corresponding_count[selection_index as usize];
 
                     preview = text.clone();
                     suffix = sub_text.clone();

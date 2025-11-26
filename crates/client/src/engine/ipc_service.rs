@@ -186,6 +186,26 @@ impl IPCService {
         Ok(candidates)
     }
 
+    /// ライブ変換: 全候補取得（変換キー押下時に呼ぶ）
+    #[tracing::instrument]
+    pub fn get_all_candidates(&mut self, hiragana: &str) -> anyhow::Result<Candidates> {
+        let request = tonic::Request::new(shared::proto::GetAllCandidatesRequest {});
+        let response = self
+            .runtime
+            .clone()
+            .block_on(self.azookey_client.get_all_candidates(request))?;
+        let suggestions = response.into_inner().suggestions;
+
+        let candidates = Candidates {
+            texts: suggestions.iter().map(|s| s.text.clone()).collect(),
+            sub_texts: suggestions.iter().map(|s| s.subtext.clone()).collect(),
+            hiragana: hiragana.to_string(),
+            corresponding_count: suggestions.iter().map(|s| s.corresponding_count).collect(),
+        };
+
+        Ok(candidates)
+    }
+
     pub fn set_context(&mut self, context: String) -> anyhow::Result<()> {
         let request = tonic::Request::new(shared::proto::SetContextRequest { context });
         let _response = self

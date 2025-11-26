@@ -92,6 +92,12 @@ message RequestIikanjiResponse {
   string error = 3;      // エラーメッセージ（失敗時）
 }
 
+// ライブ変換用: 全候補取得
+message GetAllCandidatesRequest {}
+
+message GetAllCandidatesResponse {
+  repeated Suggestion suggestions = 1; // 全候補リスト
+}
 
 // Service definition for text editing operations.
 service AzookeyService {
@@ -107,4 +113,7 @@ service AzookeyService {
   rpc IsIikanjiKeyword (IsIikanjiKeywordRequest) returns (IsIikanjiKeywordResponse);
   rpc IsIikanjiEnabled (IsIikanjiEnabledRequest) returns (IsIikanjiEnabledResponse);
   rpc RequestIikanji (RequestIikanjiRequest) returns (RequestIikanjiResponse);
+  
+  // ライブ変換: 全候補取得（変換キー押下時に呼ぶ）
+  rpc GetAllCandidates (GetAllCandidatesRequest) returns (GetAllCandidatesResponse);
 }
