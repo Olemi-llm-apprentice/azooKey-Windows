@@ -222,11 +222,99 @@ enum IikanjiKeyword: String, CaseIterable {
 4. [x] OpenAIモデル選択（最新モデル対応）
 5. [x] プライバシー警告表示
 
-### Phase 3: 拡張（将来）
+### Phase 3: IMEクライアント統合 🚧 作業中
+
+IMEで「いい感じ変換」を実際に使えるようにするための実装。
+
+#### 3.1 FFI関数の追加（Rust側）
+
+`crates/client/src/engine/ffi.rs` に以下の関数を追加:
+
+```rust
+extern "C" {
+    // いい感じ変換キーワードかどうかを判定
+    pub fn IsIikanjiKeyword(input: *const c_char) -> bool;
+    
+    // いい感じ変換を実行
+    pub fn RequestIikanji(
+        keyword: *const c_char,
+        context: *const c_char
+    ) -> *mut c_char;
+    
+    // いい感じ変換が有効かどうか
+    pub fn IsIikanjiEnabled() -> bool;
+}
+```
+
+#### 3.2 キーワード認識処理
+
+`crates/client/src/engine/` にキーワード認識ロジックを追加:
+
+1. [ ] 入力テキストがキーワード（えいご、にほんご等）かをチェック
+2. [ ] キーワードの場合、直前のコンテキストを取得
+3. [ ] `RequestIikanji` FFI関数を呼び出し
+4. [ ] 結果を候補リストに追加
+
+#### 3.3 コンテキスト管理
+
+```rust
+// 直前に確定したテキストを保持
+static LAST_COMMITTED_TEXT: Mutex<String> = Mutex::new(String::new());
+
+// テキスト確定時にコンテキストを更新
+fn on_text_committed(text: &str) {
+    let mut ctx = LAST_COMMITTED_TEXT.lock().unwrap();
+    *ctx = text.to_string();
+}
+
+// いい感じ変換時にコンテキストを取得
+fn get_context() -> String {
+    LAST_COMMITTED_TEXT.lock().unwrap().clone()
+}
+```
+
+#### 3.4 候補ウィンドウへの統合
+
+1. [ ] いい感じ変換結果を候補リストの先頭に表示
+2. [ ] 結果に特別なマーク（🤖 等）を付けて区別
+3. [ ] 選択時に結果を確定
+
+#### 3.5 実装タスク一覧
+
+| タスクID | 内容 | 優先度 | 状態 |
+|---------|------|--------|------|
+| IK-IME-01 | FFI関数宣言の追加 | 高 | [ ] |
+| IK-IME-02 | キーワード判定処理の実装 | 高 | [ ] |
+| IK-IME-03 | コンテキスト管理の実装 | 高 | [ ] |
+| IK-IME-04 | RequestIikanji呼び出しの実装 | 高 | [ ] |
+| IK-IME-05 | 候補ウィンドウへの結果表示 | 中 | [ ] |
+| IK-IME-06 | エラーハンドリング | 中 | [ ] |
+| IK-IME-07 | 統合テスト | 中 | [ ] |
+
+#### 3.6 動作フロー
+
+```
+ユーザー入力: "今日は天気がいい" → [確定] → "えいご" → [変換キー]
+                                    ↓
+                              コンテキスト保存
+                                    ↓
+                            キーワード認識 ("えいご")
+                                    ↓
+                        RequestIikanji("えいご", "今日は天気がいい")
+                                    ↓
+                            Swift変換エンジン
+                                    ↓
+                        OpenAI API / Zenzai
+                                    ↓
+                    候補ウィンドウに表示: "The weather is nice today"
+```
+
+### Phase 4: 拡張（将来）
 
 1. [ ] カスタムキーワードの追加
 2. [ ] Anthropic (Claude) 対応
 3. [ ] Ollama対応
+4. [ ] 候補ウィンドウのUI改善（いい感じ変換専用表示）
 
 ---
 
