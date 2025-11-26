@@ -593,3 +593,138 @@ test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 - v0.3.0の「カスタムキーバインド」タスクの設定UI部分が完了
 
 ---
+
+[2025-11-25 15:30:00]
+
+## 作業内容
+
+いい感じ変換をZenzaiベースに変更し、OpenAIとの切り替え機能を実装
+
+### 実施した作業
+
+- IikanjiConfigにプロバイダー選択（Zenzai/OpenAI）を追加
+- OpenAIConfigを分離して設定を整理
+- OpenAIモデルリストを最新版に更新（gpt-4o, o1, o3-mini等）
+- Swift変換エンジンにプロバイダー切り替え処理を実装
+- 設定UIにプロバイダー選択カード（ローカル/クラウド）を追加
+- プライバシー警告をプロバイダーに応じて表示
+- ユニットテストを更新（7件→36件全パス）
+- 設計仕様書を更新
+
+### 変更したファイル
+
+- `crates/shared/src/lib.rs` - IikanjiConfig, OpenAIConfig, OPENAI_MODELS追加
+- `server-swift/Sources/azookey-server/azookey_server.swift` - プロバイダー切り替え処理
+- `frontend/src/pages/iikanji.tsx` - プロバイダー選択UI、最新モデルリスト
+- `settings.json` - 新しい設定スキーマ
+- `docs/specs/iikanji.md` - 設計仕様書更新
+
+### テスト結果
+
+| テスト種別 | 結果 |
+|-----------|------|
+| Rust ユニットテスト | 36件パス |
+| TypeScript型チェック | パス |
+
+### 新機能
+
+1. **プロバイダー選択**
+   - Zenzai（ローカル）: オフライン、プライバシー保護、無料
+   - OpenAI（クラウド）: 高精度、APIキー必要、有料
+
+2. **OpenAI最新モデル対応**
+   - GPT-4o系: gpt-4o, gpt-4o-mini, gpt-4o-2024-11-20
+   - GPT-4系: gpt-4-turbo, gpt-4
+   - o1系: o1, o1-preview, o1-mini
+   - o3系: o3-mini
+
+### 備考
+
+- デフォルトプロバイダーはZenzai（ローカル）に変更
+- Zenzai使用時はZenzai設定で有効化が必要
+- OpenAI使用時のみAPIキー入力が必要
+
+---
+
+[2025-11-26 16:00:00]
+
+## 作業内容
+
+OpenAIモデルリストをGPT-5シリーズに更新
+
+### 実施した作業
+
+- OpenAI公式APIリファレンスを確認
+- GPT-5シリーズ（5.1, 5, 5-mini, 5-nano）を追加
+- GPT-4.1（非推論モデル）を追加
+- デフォルトモデルをgpt-5-miniに変更
+- 旧モデル（GPT-4o系）をレガシーとして残存
+- ユニットテストを更新（36件全パス）
+- ドキュメントを更新
+
+### 変更したファイル
+
+- `crates/shared/src/lib.rs` - OPENAI_MODELS定数、デフォルトモデル更新
+- `frontend/src/pages/iikanji.tsx` - モデルリスト、デフォルト値更新
+- `settings.json` - デフォルトモデル更新
+- `docs/specs/openai-models.md` - GPT-5シリーズのドキュメント
+- `docs/specs/iikanji.md` - モデルリスト更新
+
+### 新モデルリスト
+
+| カテゴリ | モデル |
+|---------|--------|
+| GPT-5（最新・推奨） | gpt-5.1, gpt-5, gpt-5-mini, gpt-5-nano |
+| GPT-4.1 | gpt-4.1（非推論） |
+| レガシー | gpt-4o, gpt-4o-mini |
+
+### テスト結果
+
+| テスト種別 | 結果 |
+|-----------|------|
+| Rust ユニットテスト | 36件パス |
+| TypeScript型チェック | パス |
+
+### 備考
+
+- GPT-5シリーズでは `max_completion_tokens` パラメータを使用
+- `reasoning_effort` パラメータは将来の拡張として検討
+
+---
+
+[2025-11-26 16:30:00]
+
+## 作業内容
+
+OpenAI API接続テストとGPT-5パラメータ対応
+
+### 実施した作業
+
+- 環境変数 `OPENAI_API_KEY` を使用してAPI接続テストを実施
+- 全7モデルで接続テスト成功
+- Swift変換エンジンでGPT-5シリーズの `max_completion_tokens` パラメータに自動対応
+
+### 接続テスト結果
+
+| モデルID | 実際のモデル | 状態 |
+|---------|-------------|------|
+| gpt-5.1 | gpt-5.1-2025-11-13 | ✅ OK |
+| gpt-5 | gpt-5-2025-08-07 | ✅ OK |
+| gpt-5-mini | gpt-5-mini-2025-08-07 | ✅ OK |
+| gpt-5-nano | gpt-5-nano-2025-08-07 | ✅ OK |
+| gpt-4.1 | gpt-4.1-2025-04-14 | ✅ OK |
+| gpt-4o | gpt-4o-2024-08-06 | ✅ OK |
+| gpt-4o-mini | gpt-4o-mini-2024-07-18 | ✅ OK |
+
+### 変更したファイル
+
+- `server-swift/Sources/azookey-server/azookey_server.swift` - GPT-5シリーズのmax_completion_tokens対応
+- `docs/specs/openai-models.md` - パラメータ自動切り替えの注記追加
+
+### 技術的な発見
+
+- GPT-5シリーズ（gpt-5, gpt-5.1, gpt-5-mini, gpt-5-nano）は `max_tokens` を使うとエラーになる
+- `max_completion_tokens` パラメータが必須
+- モデル名が `gpt-5` で始まる場合に自動的にパラメータを切り替えるよう実装
+
+---

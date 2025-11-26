@@ -45,30 +45,26 @@
 7. ユーザーが候補を選択して確定
 ```
 
-### 2.3 LLM連携
+### 2.3 LLMプロバイダー選択
 
-#### 対応LLMプロバイダー
+#### 対応プロバイダー
 
-| プロバイダー | API | 状態 |
-|-------------|-----|------|
-| OpenAI | Chat Completions API | 優先実装 |
-| Anthropic | Messages API | 将来対応 |
-| ローカルLLM | Ollama | 将来対応 |
+| プロバイダー | タイプ | 状態 | 特徴 |
+|-------------|-------|------|------|
+| **Zenzai** | ローカル | ✅ 実装済（デフォルト） | オフライン、プライバシー保護、無料 |
+| **OpenAI** | クラウド | ✅ 実装済 | 高精度、APIキー必要、有料 |
+| Anthropic | クラウド | 将来対応 | Claude |
+| Ollama | ローカル | 将来対応 | カスタムモデル |
 
-#### API設定
+#### プロバイダー比較
 
-```json
-{
-  "iikanji": {
-    "enabled": true,
-    "provider": "openai",
-    "apiKey": "sk-...",
-    "model": "gpt-4o-mini",
-    "maxTokens": 256,
-    "temperature": 0.7
-  }
-}
-```
+| 項目 | Zenzai（ローカル） | OpenAI（クラウド） |
+|------|-------------------|-------------------|
+| インターネット | 不要 | 必要 |
+| プライバシー | 完全保護 | APIに送信 |
+| コスト | 無料 | API利用料金 |
+| 精度 | 良好 | 最高 |
+| 速度 | 高速 | ネットワーク依存 |
 
 ---
 
@@ -77,24 +73,78 @@
 ### 3.1 アーキテクチャ
 
 ```
-┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   IME       │─────▶│   Swift     │─────▶│   LLM API   │
-│   Client    │      │   Server    │      │  (OpenAI)   │
-└─────────────┘      └─────────────┘      └─────────────┘
-                           │
-                           ▼
-                    ┌─────────────┐
-                    │   Settings  │
-                    │   (Tauri)   │
-                    └─────────────┘
+                               ┌─────────────────┐
+                               │   Zenzai Model  │
+                               │   (ローカル)    │
+                               └────────▲────────┘
+                                        │
+┌─────────────┐      ┌─────────────┐    │
+│   IME       │─────▶│   Swift     │────┤
+│   Client    │      │   Server    │    │
+└─────────────┘      └─────────────┘    │
+                           │            │
+                           ▼            ▼
+                    ┌─────────────┐  ┌─────────────┐
+                    │   Settings  │  │   OpenAI    │
+                    │   (Tauri)   │  │   API       │
+                    └─────────────┘  └─────────────┘
 ```
 
-### 3.2 キーワード認識処理
+### 3.2 設定スキーマ
 
-Swift変換エンジンで、入力テキストがいい感じ変換キーワードかどうかを判定します。
+```json
+{
+  "iikanji": {
+    "enabled": true,
+    "provider": "zenzai",  // "zenzai" または "openai"
+    "openai": {
+      "api_key": "sk-...",
+      "model": "gpt-4o-mini",
+      "max_tokens": 256,
+      "temperature": 0.7
+    }
+  }
+}
+```
+
+### 3.3 Rust設定構造体
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IikanjiConfig {
+    pub enabled: bool,
+    pub provider: String,  // "zenzai" または "openai"
+    #[serde(default)]
+    pub openai: OpenAIConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAIConfig {
+    #[serde(default)]
+    pub api_key: String,
+    pub model: String,
+    pub max_tokens: u32,
+    pub temperature: f32,
+}
+
+/// OpenAIで使用可能なモデル一覧（2025年11月時点）
+pub const OPENAI_MODELS: &[(&str, &str)] = &[
+    // GPT-5シリーズ（最新・推奨）
+    ("gpt-5.1", "GPT-5.1 (最新・最高性能)"),
+    ("gpt-5", "GPT-5 (高性能・安定)"),
+    ("gpt-5-mini", "GPT-5 Mini (高速・低コスト)"),  // デフォルト
+    ("gpt-5-nano", "GPT-5 Nano (最速・最低コスト)"),
+    // GPT-4.1（非推論モデル）
+    ("gpt-4.1", "GPT-4.1 (非推論・高速)"),
+    // GPT-4o系（レガシー）
+    ("gpt-4o", "GPT-4o (レガシー)"),
+    ("gpt-4o-mini", "GPT-4o Mini (レガシー・低コスト)"),
+];
+```
+
+### 3.4 キーワード認識処理
 
 ```swift
-// キーワード定義
 enum IikanjiKeyword: String, CaseIterable {
     case eigo = "えいご"
     case nihongo = "にほんご"
@@ -104,138 +154,101 @@ enum IikanjiKeyword: String, CaseIterable {
     case tamego = "ためご"
     case kousei = "こうせい"
     
+    /// OpenAI用プロンプト
     var prompt: String {
         switch self {
         case .eigo:
-            return "Translate the following Japanese text to English. Output only the translation:"
-        case .nihongo:
-            return "以下の英語を日本語に翻訳してください。翻訳のみ出力:"
-        case .emoji:
-            return "以下の文脈に最も適した絵文字を1-3個提案してください。絵文字のみ出力:"
-        case .iikae:
-            return "以下の文を別の表現で言い換えてください。言い換えのみ出力:"
-        case .keigo:
-            return "以下の文を敬語に変換してください。変換結果のみ出力:"
-        case .tamego:
-            return "以下の文をカジュアルな口調に変換してください。変換結果のみ出力:"
-        case .kousei:
-            return "以下の文の文法・誤字脱字を校正してください。校正結果のみ出力:"
+            return "Translate the following Japanese text to English..."
+        // ...
+        }
+    }
+    
+    /// Zenzai用プロンプト
+    var zenzaiPrompt: String {
+        switch self {
+        case .eigo:
+            return "を英語に翻訳:"
+        // ...
         }
     }
 }
 ```
 
-### 3.3 LLM呼び出し
-
-非同期でLLM APIを呼び出し、結果を候補に追加します。
+### 3.5 プロバイダー切り替え処理
 
 ```swift
-// OpenAI API呼び出し
-func requestIikanji(keyword: IikanjiKeyword, context: String) async throws -> String {
-    let url = URL(string: "https://api.openai.com/v1/chat/completions")!
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+@MainActor func requestIikanji(keyword: IikanjiKeyword, context: String) -> String? {
+    let provider = (config["iikanjiProvider"] as? String) ?? "zenzai"
     
-    let body: [String: Any] = [
-        "model": model,
-        "messages": [
-            ["role": "system", "content": keyword.prompt],
-            ["role": "user", "content": context]
-        ],
-        "max_tokens": maxTokens,
-        "temperature": temperature
-    ]
-    
-    request.httpBody = try JSONSerialization.data(withJSONObject: body)
-    
-    let (data, _) = try await URLSession.shared.data(for: request)
-    // レスポンスをパースして結果を返す
-    ...
+    if provider == "zenzai" {
+        return requestIikanjiWithZenzai(keyword: keyword, context: context)
+    } else {
+        return requestIikanjiWithOpenAI(keyword: keyword, context: context)
+    }
 }
 ```
 
-### 3.4 設定ファイル構造
-
-`settings.json` に追加する設定:
-
-```json
-{
-  "iikanji": {
-    "enabled": true,
-    "provider": "openai",
-    "apiKey": "",
-    "model": "gpt-4o-mini",
-    "maxTokens": 256,
-    "temperature": 0.7,
-    "customKeywords": {}
-  }
-}
-```
-
-### 3.5 セキュリティ考慮事項
+### 3.6 セキュリティ考慮事項
 
 1. **APIキーの保護**
-   - APIキーは設定ファイルに平文保存（ユーザー責任）
+   - APIキーは設定ファイルに保存
    - 将来的にはWindows Credential Managerを使用
 
 2. **データプライバシー**
-   - 送信されるコンテキストはLLMプロバイダーのポリシーに従う
-   - ユーザーに明確な警告を表示
+   - **Zenzai**: 完全ローカル処理、データ送信なし
+   - **OpenAI**: 入力内容がOpenAIサーバーに送信される（警告表示）
 
-3. **ネットワーク**
+3. **ネットワーク（OpenAI使用時）**
    - HTTPS通信のみ
    - タイムアウト設定（10秒）
 
 ---
 
-## 4. 実装計画
+## 4. 実装状況
 
-### Phase 1: 基本実装（優先）
+### Phase 1: 基本実装 ✅ 完了
 
 1. [x] 設計仕様書の作成
-2. [ ] 設定スキーマの追加 (`IikanjiConfig`)
-3. [ ] Swift変換エンジンにLLM呼び出し機能を追加
-4. [ ] キーワード認識処理の実装
-5. [ ] 候補リストへの結果統合
+2. [x] 設定スキーマの追加 (`IikanjiConfig`, `OpenAIConfig`)
+3. [x] Swift変換エンジンにLLM呼び出し機能を追加
+4. [x] キーワード認識処理の実装
+5. [x] プロバイダー切り替え（Zenzai/OpenAI）
 
-### Phase 2: 設定UI
+### Phase 2: 設定UI ✅ 完了
 
-1. [ ] 設定アプリにいい感じ変換設定ページを追加
-2. [ ] APIキー入力フォーム
-3. [ ] プロバイダー選択
-4. [ ] キーワードのカスタマイズ
+1. [x] 設定アプリにいい感じ変換設定ページを追加
+2. [x] プロバイダー選択UI（Zenzai/OpenAI）
+3. [x] APIキー入力フォーム（OpenAI用）
+4. [x] OpenAIモデル選択（最新モデル対応）
+5. [x] プライバシー警告表示
 
-### Phase 3: 拡張
+### Phase 3: 拡張（将来）
 
 1. [ ] カスタムキーワードの追加
-2. [ ] 複数プロバイダー対応
-3. [ ] ローカルLLM対応 (Ollama)
+2. [ ] Anthropic (Claude) 対応
+3. [ ] Ollama対応
 
 ---
 
 ## 5. テスト計画
 
-### 5.1 テスト観点表
+### 5.1 ユニットテスト
 
-| Case ID | Input / Precondition | Perspective | Expected Result | Notes |
-|---------|---------------------|-------------|-----------------|-------|
-| TC-IK-01 | キーワード「えいご」入力 | 正常系 | LLM呼び出しが行われる | - |
-| TC-IK-02 | キーワード「エイゴ」入力（カタカナ） | 正常系 | LLM呼び出しが行われる | - |
-| TC-IK-03 | コンテキストが空 | 境界値 | エラーメッセージ or 空結果 | - |
-| TC-IK-04 | APIキー未設定 | 異常系 | 適切なエラー表示 | - |
-| TC-IK-05 | ネットワークエラー | 異常系 | タイムアウトエラー表示 | - |
-| TC-IK-06 | APIレート制限 | 異常系 | リトライ or エラー表示 | - |
-| TC-IK-07 | 無効なAPIキー | 異常系 | 認証エラー表示 | - |
-| TC-IK-08 | 非キーワード入力 | 正常系 | 通常の変換処理 | - |
-| TC-IK-09 | enabled: false | 設定 | LLM呼び出しなし | - |
-| TC-IK-10 | 長いコンテキスト（1000文字超） | 境界値 | 適切にトランケート | - |
+| Case ID | テスト内容 | 状態 |
+|---------|-----------|------|
+| TC-IK-01 | IikanjiConfigデフォルト値 | ✅ |
+| TC-IK-02 | IikanjiConfig有効化設定 | ✅ |
+| TC-IK-03 | シリアライズ/デシリアライズ | ✅ |
+| TC-IK-04 | AppConfigとの統合 | ✅ |
+| TC-IK-05 | OpenAIデフォルト値 | ✅ |
+| TC-IK-06 | OpenAIモデルリスト確認 | ✅ |
+| TC-IK-07 | Zenzaiプロバイダー設定 | ✅ |
 
-### 5.2 統合テスト
+### 5.2 統合テスト（手動）
 
-- 実際のOpenAI APIを使用したE2Eテスト（手動）
-- モックサーバーを使用した自動テスト
+- Zenzaiプロバイダーでのキーワード変換
+- OpenAI APIを使用したキーワード変換
+- プロバイダー切り替え動作確認
 
 ---
 
@@ -250,10 +263,16 @@ func requestIikanji(keyword: IikanjiKeyword, context: String) async throws -> St
 │                                                 │
 │ [✓] いい感じ変換を有効にする                     │
 │                                                 │
-│ LLMプロバイダー: [OpenAI        ▼]              │
+│ プロバイダー選択:                                │
+│ ┌─────────────────┐  ┌─────────────────┐       │
+│ │ 🖥️ Zenzai       │  │ ☁️ OpenAI       │       │
+│ │ (ローカル)      │  │ (クラウド)      │       │
+│ │ ✓ オフライン   │  │ ⚠️ API必要     │       │
+│ │ ✓ 無料        │  │ 高精度         │       │
+│ └─────────────────┘  └─────────────────┘       │
 │                                                 │
+│ [OpenAI選択時のみ表示]                          │
 │ APIキー: [sk-...                    ] [テスト]  │
-│                                                 │
 │ モデル: [gpt-4o-mini  ▼]                        │
 │                                                 │
 │ ─────────────────────────────────────────────── │
@@ -262,70 +281,29 @@ func requestIikanji(keyword: IikanjiKeyword, context: String) async throws -> St
 │   えいご   → 英語に翻訳                          │
 │   にほんご → 日本語に翻訳                        │
 │   えもじ   → 絵文字を推薦                        │
-│   いいかえ → 言い換え                            │
-│   けいご   → 敬語に変換                          │
-│   ためご   → カジュアルに変換                    │
-│   こうせい → 文章を校正                          │
+│   ...                                           │
 │                                                 │
-│ ⚠️ 注意: 入力内容はLLMプロバイダーに送信されます │
+│ [Zenzai選択時]                                  │
+│ ✅ プライバシー保護モード                        │
+│    入力内容は外部に送信されません                │
+│                                                 │
+│ [OpenAI選択時]                                  │
+│ ⚠️ 注意: 入力内容はOpenAIに送信されます         │
 │                                                 │
 └─────────────────────────────────────────────────┘
 ```
 
-### 6.2 候補ウィンドウ表示
-
-いい感じ変換の結果は、通常の候補とは区別して表示:
-
-```
-┌─────────────────────────────┐
-│ 🤖 The weather is nice today │  ← いい感じ変換結果
-│    今日は天気が良いです      │
-│    本日は好天です            │
-└─────────────────────────────┘
-```
-
 ---
 
-## 7. 設定スキーマ
+## 7. 今後の検討事項
 
-### 7.1 Rust (`crates/shared/src/lib.rs`)
-
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IikanjiConfig {
-    pub enabled: bool,
-    pub provider: String,
-    #[serde(default)]
-    pub api_key: String,
-    pub model: String,
-    pub max_tokens: u32,
-    pub temperature: f32,
-}
-
-impl Default for IikanjiConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            provider: "openai".to_string(),
-            api_key: String::new(),
-            model: "gpt-4o-mini".to_string(),
-            max_tokens: 256,
-            temperature: 0.7,
-        }
-    }
-}
-```
-
----
-
-## 8. 今後の検討事項
-
-1. **コスト管理**: API利用料金の表示・制限
+1. **コスト管理**: OpenAI API利用料金の表示・制限
 2. **プライバシー**: 送信データのローカル暗号化
-3. **オフライン対応**: ローカルLLM (Ollama) のサポート
-4. **カスタムプロンプト**: ユーザー定義のキーワードとプロンプト
+3. **カスタムプロンプト**: ユーザー定義のキーワードとプロンプト
+4. **複数プロバイダー**: Anthropic Claude、Ollamaのサポート
 
 ---
 
 このドキュメントは実装の進捗に応じて更新されます。
 
+**最終更新**: 2025-11-25

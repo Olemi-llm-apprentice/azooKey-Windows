@@ -14,11 +14,12 @@ import ffi
     "shouldResetMemory": false,
     // いい感じ変換設定
     "iikanjiEnabled": false,
-    "iikanjiProvider": "openai",
-    "iikanjiApiKey": "",
-    "iikanjiModel": "gpt-4o-mini",
-    "iikanjiMaxTokens": 256,
-    "iikanjiTemperature": 0.7,
+    "iikanjiProvider": "zenzai", // "zenzai" または "openai"
+    // OpenAI設定
+    "openaiApiKey": "",
+    "openaiModel": "gpt-4o-mini",
+    "openaiMaxTokens": 256,
+    "openaiTemperature": 0.7,
 ]
 
 // いい感じ変換キーワード定義
@@ -44,6 +45,7 @@ enum IikanjiKeyword: String, CaseIterable {
         }
     }
     
+    /// OpenAI用プロンプト
     var prompt: String {
         switch self {
         case .eigo:
@@ -60,6 +62,26 @@ enum IikanjiKeyword: String, CaseIterable {
             return "以下の文をカジュアルなため口に変換してください。変換結果のみ出力してください:"
         case .kousei:
             return "以下の文の文法・誤字脱字を校正してください。校正結果のみ出力してください:"
+        }
+    }
+    
+    /// Zenzai用プロンプト（日本語で指示）
+    var zenzaiPrompt: String {
+        switch self {
+        case .eigo:
+            return "を英語に翻訳:"
+        case .nihongo:
+            return "を日本語に翻訳:"
+        case .emoji:
+            return "に合う絵文字:"
+        case .iikae:
+            return "を言い換え:"
+        case .keigo:
+            return "を敬語に:"
+        case .tamego:
+            return "をカジュアルに:"
+        case .kousei:
+            return "を校正:"
         }
     }
     
@@ -213,17 +235,20 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
                     if let providerValue = iikanjiDict["provider"] as? String {
                         config["iikanjiProvider"] = providerValue
                     }
-                    if let apiKeyValue = iikanjiDict["api_key"] as? String {
-                        config["iikanjiApiKey"] = apiKeyValue
-                    }
-                    if let modelValue = iikanjiDict["model"] as? String {
-                        config["iikanjiModel"] = modelValue
-                    }
-                    if let maxTokensValue = iikanjiDict["max_tokens"] as? Int {
-                        config["iikanjiMaxTokens"] = maxTokensValue
-                    }
-                    if let temperatureValue = iikanjiDict["temperature"] as? Double {
-                        config["iikanjiTemperature"] = temperatureValue
+                    // OpenAI設定
+                    if let openaiDict = iikanjiDict["openai"] as? [String: Any] {
+                        if let apiKeyValue = openaiDict["api_key"] as? String {
+                            config["openaiApiKey"] = apiKeyValue
+                        }
+                        if let modelValue = openaiDict["model"] as? String {
+                            config["openaiModel"] = modelValue
+                        }
+                        if let maxTokensValue = openaiDict["max_tokens"] as? Int {
+                            config["openaiMaxTokens"] = maxTokensValue
+                        }
+                        if let temperatureValue = openaiDict["temperature"] as? Double {
+                            config["openaiTemperature"] = temperatureValue
+                        }
                     }
                 }
             }
@@ -233,7 +258,7 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
     }
 }
 
-// OpenAI API呼び出し（同期的に結果を取得）
+// いい感じ変換を実行（プロバイダーに応じてZenzaiまたはOpenAIを使用）
 @MainActor func requestIikanji(keyword: IikanjiKeyword, context: String) -> String? {
     let enabled = (config["iikanjiEnabled"] as? Bool) ?? false
     guard enabled else {
@@ -241,22 +266,67 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
         return nil
     }
     
-    let apiKey = (config["iikanjiApiKey"] as? String) ?? ""
-    guard !apiKey.isEmpty else {
-        print("Iikanji API key is not set")
-        iikanjiError = "APIキーが設定されていません"
-        return nil
-    }
-    
-    let model = (config["iikanjiModel"] as? String) ?? "gpt-4o-mini"
-    let maxTokens = (config["iikanjiMaxTokens"] as? Int) ?? 256
-    let temperature = (config["iikanjiTemperature"] as? Double) ?? 0.7
-    
     guard !context.isEmpty else {
         print("Context is empty")
         iikanjiError = "変換対象のテキストがありません"
         return nil
     }
+    
+    let provider = (config["iikanjiProvider"] as? String) ?? "zenzai"
+    
+    if provider == "zenzai" {
+        return requestIikanjiWithZenzai(keyword: keyword, context: context)
+    } else {
+        return requestIikanjiWithOpenAI(keyword: keyword, context: context)
+    }
+}
+
+// Zenzaiを使ったいい感じ変換
+@MainActor func requestIikanjiWithZenzai(keyword: IikanjiKeyword, context: String) -> String? {
+    let zenzaiEnabled = (config["enable"] as? Bool) ?? false
+    guard zenzaiEnabled else {
+        print("Zenzai is not enabled, falling back to OpenAI")
+        iikanjiError = "Zenzaiが有効になっていません。設定でZenzaiを有効にするか、OpenAIプロバイダーを使用してください。"
+        return nil
+    }
+    
+    // Zenzaiにプロンプトを渡して変換
+    // contextを入力として、キーワードに応じた変換を実行
+    let promptContext = "\(context)\n\(keyword.zenzaiPrompt)"
+    
+    var tempComposingText = ComposingText()
+    // 入力をひらがなに変換するためのテキストを設定
+    for char in promptContext {
+        tempComposingText.insertAtCursorPosition(String(char), inputStyle: .roman2kana)
+    }
+    
+    let options = getOptions(context: context)
+    let converted = converter.requestCandidates(tempComposingText, options: options)
+    
+    // 変換結果から最適な候補を取得
+    if let firstCandidate = converted.mainResults.first {
+        let result = constructCandidateString(candidate: firstCandidate, hiragana: tempComposingText.convertTarget)
+        return result
+    }
+    
+    return nil
+}
+
+// OpenAI API呼び出し（同期的に結果を取得）
+@MainActor func requestIikanjiWithOpenAI(keyword: IikanjiKeyword, context: String) -> String? {
+    let apiKey = (config["openaiApiKey"] as? String) ?? ""
+    guard !apiKey.isEmpty else {
+        print("OpenAI API key is not set")
+        iikanjiError = "OpenAI APIキーが設定されていません"
+        return nil
+    }
+    
+    let model = (config["openaiModel"] as? String) ?? "gpt-5-mini"
+    let maxTokens = (config["openaiMaxTokens"] as? Int) ?? 256
+    let temperature = (config["openaiTemperature"] as? Double) ?? 0.7
+    
+    // GPT-5シリーズかどうかを判定
+    let isGpt5Series = model.hasPrefix("gpt-5")
     
     // URLリクエストを作成
     guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
@@ -269,15 +339,21 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.timeoutInterval = 10.0
     
-    let body: [String: Any] = [
+    // GPT-5シリーズは max_completion_tokens を使用、それ以外は max_tokens を使用
+    var body: [String: Any] = [
         "model": model,
         "messages": [
             ["role": "system", "content": keyword.prompt],
             ["role": "user", "content": context]
         ],
-        "max_tokens": maxTokens,
         "temperature": temperature
     ]
+    
+    if isGpt5Series {
+        body["max_completion_tokens"] = maxTokens
+    } else {
+        body["max_tokens"] = maxTokens
+    }
     
     do {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -294,7 +370,7 @@ func constructCandidateString(candidate: Candidate, hiragana: String) -> String 
         defer { semaphore.signal() }
         
         if let error = error {
-            print("Iikanji API error: \(error)")
+            print("OpenAI API error: \(error)")
             return
         }
         

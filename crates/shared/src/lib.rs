@@ -40,7 +40,15 @@ impl Default for PredictionConfig {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct IikanjiConfig {
     pub enabled: bool,
+    /// プロバイダー: "zenzai" (ローカル) または "openai" (API)
     pub provider: String,
+    /// OpenAI設定（provider="openai"の場合に使用）
+    #[serde(default)]
+    pub openai: OpenAIConfig,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct OpenAIConfig {
     #[serde(default)]
     pub api_key: String,
     pub model: String,
@@ -48,15 +56,37 @@ pub struct IikanjiConfig {
     pub temperature: f32,
 }
 
+impl Default for OpenAIConfig {
+    fn default() -> Self {
+        OpenAIConfig {
+            api_key: String::new(),
+            model: "gpt-5-mini".to_string(), // GPT-5シリーズのコスト効率版
+            max_tokens: 256,
+            temperature: 0.7,
+        }
+    }
+}
+
+/// OpenAIで使用可能なモデル一覧（2025年11月時点）
+pub const OPENAI_MODELS: &[(&str, &str)] = &[
+    // GPT-5シリーズ（最新・推奨）
+    ("gpt-5.1", "GPT-5.1 (最新・最高性能)"),
+    ("gpt-5", "GPT-5 (高性能・安定)"),
+    ("gpt-5-mini", "GPT-5 Mini (高速・低コスト)"),
+    ("gpt-5-nano", "GPT-5 Nano (最速・最低コスト)"),
+    // GPT-4.1（非推論モデル）
+    ("gpt-4.1", "GPT-4.1 (非推論・高速)"),
+    // GPT-4o系（レガシー）
+    ("gpt-4o", "GPT-4o (レガシー)"),
+    ("gpt-4o-mini", "GPT-4o Mini (レガシー・低コスト)"),
+];
+
 impl Default for IikanjiConfig {
     fn default() -> Self {
         IikanjiConfig {
             enabled: false,
-            provider: "openai".to_string(),
-            api_key: String::new(),
-            model: "gpt-4o-mini".to_string(),
-            max_tokens: 256,
-            temperature: 0.7,
+            provider: "zenzai".to_string(), // デフォルトはローカルモデル
+            openai: OpenAIConfig::default(),
         }
     }
 }
@@ -501,11 +531,11 @@ mod tests {
         assert_eq!(config.zenzai.backend, "cpu");
         // いい感じ変換のデフォルト値
         assert!(!config.iikanji.enabled);
-        assert_eq!(config.iikanji.provider, "openai");
-        assert_eq!(config.iikanji.api_key, "");
-        assert_eq!(config.iikanji.model, "gpt-4o-mini");
-        assert_eq!(config.iikanji.max_tokens, 256);
-        assert!((config.iikanji.temperature - 0.7).abs() < 0.01);
+        assert_eq!(config.iikanji.provider, "zenzai", "デフォルトはZenzai（ローカル）");
+        assert_eq!(config.iikanji.openai.api_key, "");
+        assert_eq!(config.iikanji.openai.model, "gpt-5-mini");
+        assert_eq!(config.iikanji.openai.max_tokens, 256);
+        assert!((config.iikanji.openai.temperature - 0.7).abs() < 0.01);
         // キーバインドのデフォルト値
         assert_eq!(config.keybindings.toggle_input_mode.len(), 1);
         assert_eq!(config.keybindings.toggle_input_mode[0].key, "Zenkaku/Hankaku");
@@ -569,31 +599,34 @@ mod tests {
         
         // Then: デフォルト値が設定されている
         assert!(!config.enabled, "デフォルトではいい感じ変換は無効");
-        assert_eq!(config.provider, "openai");
-        assert_eq!(config.api_key, "");
-        assert_eq!(config.model, "gpt-4o-mini");
-        assert_eq!(config.max_tokens, 256);
-        assert!((config.temperature - 0.7).abs() < 0.01);
+        assert_eq!(config.provider, "zenzai", "デフォルトはZenzai（ローカル）");
+        assert_eq!(config.openai.api_key, "");
+        assert_eq!(config.openai.model, "gpt-5-mini");
+        assert_eq!(config.openai.max_tokens, 256);
+        assert!((config.openai.temperature - 0.7).abs() < 0.01);
     }
 
     #[test]
     fn tc_ik_02_iikanji_config_enabled() {
-        // Given: いい感じ変換を有効化した設定
+        // Given: いい感じ変換を有効化した設定（OpenAIプロバイダー）
         // When: IikanjiConfig を作成して enabled を true に設定
         let config = IikanjiConfig {
             enabled: true,
             provider: "openai".to_string(),
-            api_key: "sk-test-key".to_string(),
-            model: "gpt-4o".to_string(),
-            max_tokens: 512,
-            temperature: 0.5,
+            openai: OpenAIConfig {
+                api_key: "sk-test-key".to_string(),
+                model: "gpt-4o".to_string(),
+                max_tokens: 512,
+                temperature: 0.5,
+            },
         };
         
         // Then: 設定値が正しい
         assert!(config.enabled);
-        assert_eq!(config.api_key, "sk-test-key");
-        assert_eq!(config.model, "gpt-4o");
-        assert_eq!(config.max_tokens, 512);
+        assert_eq!(config.provider, "openai");
+        assert_eq!(config.openai.api_key, "sk-test-key");
+        assert_eq!(config.openai.model, "gpt-4o");
+        assert_eq!(config.openai.max_tokens, 512);
     }
 
     #[test]
@@ -602,10 +635,12 @@ mod tests {
         let config = IikanjiConfig {
             enabled: true,
             provider: "openai".to_string(),
-            api_key: "sk-test".to_string(),
-            model: "gpt-4o-mini".to_string(),
-            max_tokens: 256,
-            temperature: 0.7,
+            openai: OpenAIConfig {
+                api_key: "sk-test".to_string(),
+                model: "gpt-5-mini".to_string(),
+                max_tokens: 256,
+                temperature: 0.7,
+            },
         };
         
         // When: JSON にシリアライズしてデシリアライズ
@@ -615,9 +650,9 @@ mod tests {
         // Then: 元の値と一致する
         assert_eq!(config.enabled, deserialized.enabled);
         assert_eq!(config.provider, deserialized.provider);
-        assert_eq!(config.api_key, deserialized.api_key);
-        assert_eq!(config.model, deserialized.model);
-        assert_eq!(config.max_tokens, deserialized.max_tokens);
+        assert_eq!(config.openai.api_key, deserialized.openai.api_key);
+        assert_eq!(config.openai.model, deserialized.openai.model);
+        assert_eq!(config.openai.max_tokens, deserialized.openai.max_tokens);
     }
 
     #[test]
@@ -625,26 +660,57 @@ mod tests {
         // Given: AppConfig全体（いい感じ変換含む）
         let mut config = AppConfig::default();
         config.iikanji.enabled = true;
-        config.iikanji.api_key = "sk-test-key".to_string();
+        config.iikanji.provider = "openai".to_string();
+        config.iikanji.openai.api_key = "sk-test-key".to_string();
         
         // When: JSON にシリアライズ
         let json = serde_json::to_string(&config).unwrap();
         
         // Then: iikanji フィールドが含まれる
         assert!(json.contains("\"iikanji\""), "JSONにiikanjiフィールドが含まれるべき");
-        assert!(json.contains("\"provider\":\"openai\""), "provider がopenaiであるべき");
+        assert!(json.contains("\"openai\""), "OpenAI設定が含まれるべき");
     }
 
     #[test]
-    fn tc_ik_05_iikanji_config_deserialize_with_default_api_key() {
-        // Given: api_keyが省略されたJSON
-        let json = r#"{"enabled":true,"provider":"openai","model":"gpt-4o-mini","max_tokens":256,"temperature":0.7}"#;
+    fn tc_ik_05_iikanji_config_deserialize_with_default_openai() {
+        // Given: openaiが省略されたJSON（Zenzai使用時）
+        let json = r#"{"enabled":true,"provider":"zenzai"}"#;
         
         // When: デシリアライズ
         let config: IikanjiConfig = serde_json::from_str(json).unwrap();
         
-        // Then: api_keyはデフォルト（空文字列）
-        assert_eq!(config.api_key, "");
+        // Then: openaiはデフォルト値
+        assert_eq!(config.openai.api_key, "");
+        assert_eq!(config.openai.model, "gpt-5-mini");
+    }
+    
+    #[test]
+    fn tc_ik_06_openai_models_list() {
+        // Given: OPENAI_MODELS定数
+        // When: モデルリストを確認
+        // Then: 最新のGPT-5シリーズが含まれている
+        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5.1"), "gpt-5.1が含まれるべき");
+        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5"), "gpt-5が含まれるべき");
+        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5-mini"), "gpt-5-miniが含まれるべき");
+        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-5-nano"), "gpt-5-nanoが含まれるべき");
+        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-4.1"), "gpt-4.1が含まれるべき");
+        // レガシーモデルも確認
+        assert!(OPENAI_MODELS.iter().any(|(id, _)| *id == "gpt-4o"), "gpt-4oが含まれるべき");
+    }
+    
+    #[test]
+    fn tc_ik_07_provider_zenzai() {
+        // Given: Zenzaiプロバイダーを使用する設定
+        let config = IikanjiConfig {
+            enabled: true,
+            provider: "zenzai".to_string(),
+            openai: OpenAIConfig::default(),
+        };
+        
+        // Then: プロバイダーがzenzai
+        assert_eq!(config.provider, "zenzai");
+        // OpenAI設定は使われないがデフォルト値を持つ
+        assert_eq!(config.openai.model, "gpt-5-mini");
     }
 
     // ==========================================
